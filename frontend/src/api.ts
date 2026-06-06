@@ -43,6 +43,7 @@ export interface MessageResponse {
   ai_reply: { text: string; audio_base64: string }
   corrections: Correction[]
   pronunciation_score: PronunciationScore | null
+  speaking_wpm?: number
 }
 
 export interface TurnData {

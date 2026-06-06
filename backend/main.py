@@ -160,10 +160,16 @@ async def send_message(
 
     # --- Resolve user text ---
     user_text = ""
+    speaking_wpm = 0
     if audio is not None and audio.filename:
         try:
             audio_bytes = await audio.read()
             user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+            # Calculate speaking rate (WPM)
+            duration = SpeechService.get_wav_duration(audio_bytes)
+            word_count = len(user_text.split())
+            if duration > 0:
+                speaking_wpm = round(word_count / (duration / 60.0), 1)
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -215,6 +221,7 @@ async def send_message(
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
         "pronunciation_note": pronunciation_note,
+        "speaking_wpm": speaking_wpm,
     }
     convs.append_message(session_id, turn_data)
 
@@ -225,6 +232,7 @@ async def send_message(
         "ai_reply": {"text": ai_text, "audio_base64": audio_base64},
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
+        "speaking_wpm": speaking_wpm,
     }
 
     # Fill corrected_text from corrections
@@ -254,10 +262,16 @@ async def send_message_stream(
 
     # Resolve user text
     user_text = ""
+    speaking_wpm = 0
+    _audio_bytes = b""
     if audio is not None and audio.filename:
         try:
-            audio_bytes = await audio.read()
-            user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+            _audio_bytes = await audio.read()
+            user_text = await speech.transcribe(_audio_bytes, audio.filename or "audio.webm")
+            duration = SpeechService.get_wav_duration(_audio_bytes)
+            word_count = len(user_text.split())
+            if duration > 0:
+                speaking_wpm = round(word_count / (duration / 60.0), 1)
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -268,14 +282,11 @@ async def send_message_stream(
     if not user_text:
         raise HTTPException(status_code=400, detail="Empty input")
 
-    # Store the user turn AFTER streaming completes — we'll do it via a separate
-    # call from the frontend, or we can store it here. For simplicity, we store
-    # a placeholder turn first (the frontend will patch it or we use the stream).
-    # Actually the frontend will send a follow-up to finalize. But to keep it
-    # simple, we just stream and the frontend saves via the regular endpoint.
-    # We still need to stream corrections though.
+    # Determine if audio was used (captured before closure)
+    _has_audio = audio is not None and audio.filename
 
     async def event_stream():
+        nonlocal speaking_wpm
         accumulated_text = ""
         corrections_data = []
         async for sse_event in engine.chat_stream(scene, doc.get("messages", []), user_text):
@@ -295,7 +306,7 @@ async def send_message_stream(
         # After stream, compute pronunciation score and store the turn
         pronunciation_score = None
         pronunciation_note = ""
-        if audio is not None and audio.filename:
+        if _has_audio:
             corr_count = len(corrections_data)
             if corr_count == 0:
                 overall = 8.5
@@ -318,6 +329,7 @@ async def send_message_stream(
             "corrections": corrections_data,
             "pronunciation_score": pronunciation_score,
             "pronunciation_note": pronunciation_note,
+            "speaking_wpm": speaking_wpm,
         })
 
         # Generate and send audio

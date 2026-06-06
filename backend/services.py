@@ -421,6 +421,18 @@ class SpeechService:
         })
         return f"wss://{self.IAT_HOST}{self.IAT_PATH}?{params}"
 
+    @staticmethod
+    def get_wav_duration(wav_bytes: bytes) -> float:
+        """Extract duration in seconds from WAV header (16-bit mono PCM)."""
+        import struct
+        if len(wav_bytes) < 44:
+            return 0.0
+        data_size = struct.unpack('<I', wav_bytes[40:44])[0]
+        sample_rate = struct.unpack('<I', wav_bytes[24:28])[0]
+        if sample_rate > 0:
+            return data_size / (sample_rate * 2.0)  # 2 bytes per sample
+        return 0.0
+
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         """Transcribe WAV audio to text using iFlytek WebSocket API."""
         if not self.is_configured:
