@@ -34,6 +34,10 @@ function goTo(item: ConversationListItem) {
   }
 }
 
+function goReplay(item: ConversationListItem) {
+  router.push({ name: 'replay', params: { sessionId: item.session_id } })
+}
+
 async function handleDelete(item: ConversationListItem) {
   try {
     await deleteConversation(item.session_id)
@@ -75,7 +79,11 @@ async function handleDelete(item: ConversationListItem) {
               <NTag size="small" :bordered="false">💬 {{ item.turn_count }} 轮</NTag>
               <NTag v-if="item.ended_at" type="success" size="small" :bordered="false">已完成</NTag>
               <NTag v-else type="warning" size="small" :bordered="false">进行中</NTag>
-              <NButton size="small" :type="item.ended_at ? 'primary' : 'warning'" :ghost="!item.ended_at">
+              <NButton v-if="item.ended_at" size="small" type="info" ghost @click.stop="goReplay(item)">
+                回放
+              </NButton>
+              <NButton size="small" :type="item.ended_at ? 'primary' : 'warning'" :ghost="!item.ended_at"
+                       @click.stop="goTo(item)">
                 {{ item.ended_at ? '查看总结' : '继续练习' }}
               </NButton>
               <NPopconfirm @positive-click="() => handleDelete(item)">

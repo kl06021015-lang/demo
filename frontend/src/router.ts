@@ -27,4 +27,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'dashboard',
     component: () => import('./views/Dashboard.vue'),
   },
+  {
+    path: '/replay/:sessionId',
+    name: 'replay',
+    component: () => import('./views/Replay.vue'),
+  },
 ]
