@@ -242,8 +242,10 @@ async def send_message_stream(
     session_id: str,
     text: Optional[str] = Form(None),
     audio: Optional[UploadFile] = File(None),
+    tts_enabled: Optional[str] = Form("true"),
 ):
     """Stream AI reply via Server-Sent Events."""
+    _tts_enabled = tts_enabled != "false"
     doc = convs.load(session_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -320,13 +322,14 @@ async def send_message_stream(
             "pronunciation_note": pronunciation_note,
         })
 
-        # Generate and send audio
-        try:
-            mp3_bytes = await speech.synthesize(accumulated_text)
-            audio_b64 = base64.b64encode(mp3_bytes).decode("utf-8")
-            yield f"data: {json.dumps({'type': 'audio', 'data': audio_b64})}\n\n"
-        except Exception:
-            pass
+        # Generate and send audio (skip if TTS is disabled)
+        if _tts_enabled:
+            try:
+                mp3_bytes = await speech.synthesize(accumulated_text)
+                audio_b64 = base64.b64encode(mp3_bytes).decode("utf-8")
+                yield f"data: {json.dumps({'type': 'audio', 'data': audio_b64})}\n\n"
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_stream(),

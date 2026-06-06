@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton, NInput, NSpace, NSpin, NTag, NAlert, NPopconfirm,
-  NDivider, useMessage
+  NDivider, NTooltip, useMessage
 } from 'naive-ui'
-import { SendOutlined, ArrowLeftOutlined, CheckCircleOutlined } from '@vicons/antd'
+import { SendOutlined, ArrowLeftOutlined, CheckCircleOutlined, SoundOutlined } from '@vicons/antd'
 import {
   createConversation,
   getConversation,
@@ -31,6 +31,8 @@ const textInput = ref('')
 const loading = ref(false)
 const error = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+const ttsEnabled = ref(localStorage.getItem('ttsEnabled') !== 'false')
+watch(ttsEnabled, (v) => localStorage.setItem('ttsEnabled', String(v)))
 
 // --- Types ---
 interface MessageItem {
@@ -133,7 +135,7 @@ async function handleSendText() {
 
   loading.value = true
   try {
-    for await (const event of sendMessageStream(sessionId.value, { text })) {
+    for await (const event of sendMessageStream(sessionId.value, { text, ttsEnabled: ttsEnabled.value })) {
       if (event.type === 'text_delta') {
         // Update the AI bubble in-place
         const idx = messages.value.findIndex(m => m.id === aiId)
@@ -155,12 +157,12 @@ async function handleSendText() {
           }
         }
       } else if (event.type === 'audio' && event.data) {
-        // Update AI bubble with audio and auto-play
+        // Update AI bubble with audio — only auto-play if TTS is enabled
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) {
           messages.value[idx] = { ...messages.value[idx], audioBase64: event.data }
         }
-        playAudio(event.data)
+        if (ttsEnabled.value) playAudio(event.data)
       }
       scrollToBottom()
     }
@@ -187,7 +189,7 @@ async function handleSendAudio(audioBlob: Blob) {
   messages.value.push({ id: aiId, role: 'ai', text: '' })
 
   try {
-    for await (const event of sendMessageStream(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })) {
+    for await (const event of sendMessageStream(sessionId.value, { audio: audioBlob, filename: 'recording.wav', ttsEnabled: ttsEnabled.value })) {
       if (event.type === 'text_delta') {
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) {
@@ -209,7 +211,7 @@ async function handleSendAudio(audioBlob: Blob) {
       } else if (event.type === 'audio' && event.data) {
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) messages.value[idx] = { ...messages.value[idx], audioBase64: event.data }
-        playAudio(event.data)
+        if (ttsEnabled.value) playAudio(event.data)
       }
       scrollToBottom()
     }
@@ -236,7 +238,7 @@ function processResponse(resp: any) {
   }
   messages.value.push(msgItem)
 
-  if (resp.ai_reply.audio_base64) {
+  if (resp.ai_reply.audio_base64 && ttsEnabled.value) {
     playAudio(resp.ai_reply.audio_base64)
   }
 }
@@ -280,15 +282,26 @@ function scrollToBottom() {
         </NButton>
         <span style="font-weight:600">{{ sceneName || '对话练习' }}</span>
       </NSpace>
-      <NPopconfirm @positive-click="handleEnd">
-        <template #trigger>
-          <NButton size="small" type="warning" :disabled="!messages.length">
-            <template #icon><CheckCircleOutlined /></template>
-            结束对话
-          </NButton>
-        </template>
-        确定要结束本次练习吗？结束后可在总结页查看报告。
+      <NSpace align="center" :size="8">
+        <NTooltip>
+          <template #trigger>
+            <NButton size="small" @click="ttsEnabled = !ttsEnabled" :type="ttsEnabled ? 'primary' : 'default'" :ghost="!ttsEnabled">
+              <template #icon><SoundOutlined /></template>
+              {{ ttsEnabled ? '🔊' : '🔇' }}
+            </NButton>
+          </template>
+          {{ ttsEnabled ? '播报已开启' : '播报已关闭' }}
+        </NTooltip>
+        <NPopconfirm @positive-click="handleEnd">
+          <template #trigger>
+            <NButton size="small" type="warning" :disabled="!messages.length">
+              <template #icon><CheckCircleOutlined /></template>
+              结束对话
+            </NButton>
+          </template>
+          确定要结束本次练习吗？结束后可在总结页查看报告。
       </NPopconfirm>
+      </NSpace>
     </div>
 
     <!-- Error -->

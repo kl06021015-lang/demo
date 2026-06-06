@@ -183,11 +183,12 @@ export function getConversationList(limit: number = 20): Promise<{ conversations
 
 export async function* sendMessageStream(
   sessionId: string,
-  opts: { text?: string; audio?: Blob; filename?: string }
+  opts: { text?: string; audio?: Blob; filename?: string; ttsEnabled?: boolean }
 ): AsyncGenerator<{ type: string; content?: string; data?: any }> {
   const form = new FormData()
   if (opts.text) form.append('text', opts.text)
   if (opts.audio) form.append('audio', opts.audio, opts.filename || 'recording.webm')
+  form.append('tts_enabled', opts.ttsEnabled !== false ? 'true' : 'false')
 
   const resp = await fetch(`${BASE}/conversations/${sessionId}/message/stream`, {
     method: 'POST',
