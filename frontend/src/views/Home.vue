@@ -27,6 +27,8 @@ const iconMap: Record<string, string> = {
   'doctor-visit': '🏥',
   'job-interview': '💼',
   'academic-discussion': '🎓',
+  'apartment-viewing': '🏠',
+  'debate-competition': '🎤',
 }
 
 // Practice time estimates by difficulty
