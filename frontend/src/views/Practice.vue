@@ -179,40 +179,38 @@ async function handleSendText() {
   }
 }
 
-async function handleSendAudio(audioBlob: Blob) {
-  if (loading.value) return
+async function handleVoiceText(recognizedText: string) {
+  // Voice recognized text — send as regular text message
+  if (loading.value || !recognizedText) return
 
-  loading.value = true
+  // Echo user message
+  const userMsg: MessageItem = { id: `u${Date.now()}`, role: 'user', text: recognizedText }
+  messages.value.push(userMsg)
 
   // Empty AI bubble for streaming
   const aiId = `a${Date.now()}`
-  const aiMsg: MessageItem = { id: aiId, role: 'ai', text: '' }
-  messages.value.push(aiMsg)
+  messages.value.push({ id: aiId, role: 'ai', text: '' })
 
-  let userMsgId = ''
-
+  loading.value = true
   try {
-    for await (const event of sendMessageStream(sessionId.value, { audio: audioBlob, filename: 'recording.webm' })) {
+    for await (const event of sendMessageStream(sessionId.value, { text: recognizedText })) {
       if (event.type === 'text_delta') {
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) {
           messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
         }
       } else if (event.type === 'corrections' && event.data) {
-        // Backend stores the user text; we need to get it. For now, update last user message
-        // The streaming endpoint stores the turn server-side, so we reload history
-        const doc = await getConversation(sessionId.value)
-        const lastTurn = doc.messages[doc.messages.length - 1]
-        if (lastTurn && lastTurn.user_text) {
-          userMsgId = `u${Date.now()}`
-          messages.value.splice(messages.value.length - 1, 0, {
-            id: userMsgId,
-            role: 'user',
-            text: lastTurn.user_text,
-            correctedText: lastTurn.corrected_text || undefined,
-            corrections: lastTurn.corrections || event.data,
-            pronunciationScore: lastTurn.pronunciation_score,
-          })
+        const uIdx = messages.value.findIndex(m => m.id === userMsg.id)
+        if (uIdx >= 0 && event.data.length) {
+          let corrected = recognizedText
+          for (const c of event.data) {
+            corrected = corrected.replace(c.original || '', c.corrected || '')
+          }
+          messages.value[uIdx] = {
+            ...messages.value[uIdx],
+            correctedText: corrected,
+            corrections: event.data,
+          }
         }
       } else if (event.type === 'audio' && event.data) {
         const idx = messages.value.findIndex(m => m.id === aiId)
@@ -224,18 +222,9 @@ async function handleSendAudio(audioBlob: Blob) {
       scrollToBottom()
     }
   } catch (e: any) {
-    // Fallback to non-streaming
     messages.value = messages.value.filter(m => m.id !== aiId)
     try {
-      const resp = await sendMessage(sessionId.value, { audio: audioBlob, filename: 'recording.webm' })
-      messages.value.push({
-        id: `u${Date.now()}`,
-        role: 'user',
-        text: resp.user_text,
-        correctedText: resp.corrected_text || undefined,
-        corrections: resp.corrections,
-        pronunciationScore: resp.pronunciation_score,
-      })
+      const resp = await sendMessage(sessionId.value, { text: recognizedText })
       processResponse(resp)
     } catch (e2: any) {
       error.value = e2.message || 'Send failed'
@@ -351,7 +340,7 @@ function scrollToBottom() {
         />
         <AudioRecorder
           :disabled="loading"
-          @audio-ready="handleSendAudio"
+          @text-ready="handleVoiceText"
         />
         <NButton
           type="primary"
