@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NCard, NButton, NTag, NSpin, NEmpty, NSpace } from 'naive-ui'
-import { getConversationList, type ConversationListItem } from '../api'
+import { NCard, NButton, NTag, NSpin, NEmpty, NSpace, NPopconfirm, useMessage } from 'naive-ui'
+import { getConversationList, deleteConversation, type ConversationListItem } from '../api'
 
 const router = useRouter()
+const msg = useMessage()
 const loading = ref(true)
 const items = ref<ConversationListItem[]>([])
 
@@ -30,6 +31,16 @@ function goTo(item: ConversationListItem) {
     router.push({ name: 'summary', params: { sessionId: item.session_id } })
   } else {
     router.push({ name: 'practice', params: { sceneId: item.scene_id }, query: { session: item.session_id } })
+  }
+}
+
+async function handleDelete(item: ConversationListItem) {
+  try {
+    await deleteConversation(item.session_id)
+    items.value = items.value.filter(i => i.session_id !== item.session_id)
+    msg.success('已删除')
+  } catch (e: any) {
+    msg.error(e.message || '删除失败')
   }
 }
 </script>
@@ -67,6 +78,12 @@ function goTo(item: ConversationListItem) {
               <NButton size="small" :type="item.ended_at ? 'primary' : 'warning'" :ghost="!item.ended_at">
                 {{ item.ended_at ? '查看总结' : '继续练习' }}
               </NButton>
+              <NPopconfirm @positive-click="() => handleDelete(item)">
+                <template #trigger>
+                  <NButton size="small" type="error" ghost @click.stop>删除</NButton>
+                </template>
+                确定要删除这条练习记录吗？删除后不可恢复。
+              </NPopconfirm>
             </NSpace>
           </div>
         </NCard>

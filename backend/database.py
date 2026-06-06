@@ -187,6 +187,17 @@ def append_turn(session_id: str, turn_data: dict) -> None:
     conn.close()
 
 
+def delete_conversation(session_id: str) -> bool:
+    """Delete a conversation and all its turns. Returns True if found & deleted."""
+    conn = _connect()
+    conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+    deleted = conn.total_changes > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
 def end_conversation(session_id: str, summary: dict) -> dict:
     """Mark a conversation as ended and store the summary."""
     now = datetime.now(timezone.utc).isoformat()

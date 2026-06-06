@@ -31,6 +31,7 @@ from database import (
     init_db,
     migrate_json_to_sqlite,
     end_conversation as db_end_conversation,
+    delete_conversation as db_delete_conversation,
     list_conversations,
     get_dashboard_stats,
 )
@@ -131,6 +132,15 @@ def get_conversation(session_id: str):
     if doc is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return doc
+
+
+@app.delete("/api/conversations/{session_id}")
+def delete_conversation(session_id: str):
+    """Delete a conversation and all its turns."""
+    deleted = db_delete_conversation(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True, "session_id": session_id}
 
 
 @app.post("/api/conversations/{session_id}/message")
