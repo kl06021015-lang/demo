@@ -126,19 +126,22 @@ async function handleSendText() {
   const userMsg: MessageItem = { id: `u${Date.now()}`, role: 'user', text }
   messages.value.push(userMsg)
 
-  // Empty AI bubble that gets updated during streaming
+  // AI bubble is created lazily on first text_delta — avoid empty bubble
   const aiId = `a${Date.now()}`
-  const aiMsg: MessageItem = { id: aiId, role: 'ai', text: '' }
-  messages.value.push(aiMsg)
+  let aiBubbleCreated = false
 
   loading.value = true
   try {
     for await (const event of sendMessageStream(sessionId.value, { text })) {
       if (event.type === 'text_delta') {
-        // Update the AI bubble in-place
-        const idx = messages.value.findIndex(m => m.id === aiId)
-        if (idx >= 0) {
-          messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
+        if (!aiBubbleCreated) {
+          messages.value.push({ id: aiId, role: 'ai', text: event.content || '' })
+          aiBubbleCreated = true
+        } else {
+          const idx = messages.value.findIndex(m => m.id === aiId)
+          if (idx >= 0) {
+            messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
+          }
         }
       } else if (event.type === 'corrections' && event.data) {
         // Update user message with corrections
@@ -166,7 +169,9 @@ async function handleSendText() {
     }
   } catch (e: any) {
     // Fallback: use non-streaming endpoint
-    messages.value = messages.value.filter(m => m.id !== aiId)  // remove empty AI bubble
+    if (aiBubbleCreated) {
+      messages.value = messages.value.filter(m => m.id !== aiId)
+    }
     try {
       const resp = await sendMessage(sessionId.value, { text })
       processResponse(resp)
@@ -184,14 +189,19 @@ async function handleSendAudio(audioBlob: Blob) {
   loading.value = true
 
   const aiId = `a${Date.now()}`
-  messages.value.push({ id: aiId, role: 'ai', text: '' })
+  let aiBubbleCreated = false
 
   try {
     for await (const event of sendMessageStream(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })) {
       if (event.type === 'text_delta') {
-        const idx = messages.value.findIndex(m => m.id === aiId)
-        if (idx >= 0) {
-          messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
+        if (!aiBubbleCreated) {
+          messages.value.push({ id: aiId, role: 'ai', text: event.content || '' })
+          aiBubbleCreated = true
+        } else {
+          const idx = messages.value.findIndex(m => m.id === aiId)
+          if (idx >= 0) {
+            messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
+          }
         }
       } else if (event.type === 'corrections' && event.data) {
         const doc = await getConversation(sessionId.value)
@@ -214,7 +224,7 @@ async function handleSendAudio(audioBlob: Blob) {
       scrollToBottom()
     }
   } catch (e: any) {
-    messages.value = messages.value.filter(m => m.id !== aiId)
+    if (aiBubbleCreated) messages.value = messages.value.filter(m => m.id !== aiId)
     try {
       const resp = await sendMessage(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })
       messages.value.push({ id: `u${Date.now()}`, role: 'user', text: resp.user_text, correctedText: resp.corrected_text || undefined, corrections: resp.corrections, pronunciationScore: resp.pronunciation_score })
@@ -309,12 +319,14 @@ function scrollToBottom() {
         </div>
       </TransitionGroup>
 
-      <!-- Loading indicator -->
-      <div v-if="loading" style="text-align:center;padding:16px">
-        <NSpace align="center" justify="center">
-          <NSpin size="small" />
-          <span style="color:#999">AI 正在回复...</span>
-        </NSpace>
+      <!-- Typing indicator — shows while streaming begins, before first token arrives -->
+      <div v-if="loading" style="display:flex;align-items:center;gap:8px;padding:8px 0">
+        <div style="display:flex;align-items:center;gap:4px">
+          <span class="typing-dot" style="animation-delay:0s" />
+          <span class="typing-dot" style="animation-delay:0.2s" />
+          <span class="typing-dot" style="animation-delay:0.4s" />
+        </div>
+        <span style="color:#999;font-size:13px">AI 正在输入...</span>
       </div>
     </div>
 
@@ -353,5 +365,19 @@ function scrollToBottom() {
 .msg-enter-from {
   opacity: 0;
   transform: translateY(12px);
+}
+
+/* Typing dots animation */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #999;
+  animation: typing-bounce 0.6s infinite alternate;
+}
+@keyframes typing-bounce {
+  from { opacity: 0.2; transform: translateY(0); }
+  to   { opacity: 1;   transform: translateY(-4px); }
 }
 </style>
