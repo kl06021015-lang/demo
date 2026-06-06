@@ -2,7 +2,7 @@
 Business logic for the English speaking practice app.
 - SceneManager: scene loading
 - ConversationManager: conversation persistence (SQLite via database.py)
-- ConversationEngine: Claude API for dialogue + corrections + scoring
+- ConversationEngine: DeepSeek API for dialogue + corrections + scoring
 - SpeechService: Whisper STT + Edge-TTS
 """
 
@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import anthropic
 from openai import OpenAI
 
 from database import (
@@ -105,7 +104,7 @@ class ConversationManager:
 
 
 # ---------------------------------------------------------------------------
-# ConversationEngine  (Claude API)
+# ConversationEngine  (DeepSeek API via OpenAI SDK)
 # ---------------------------------------------------------------------------
 
 CONVERSATION_SYSTEM = """\
@@ -162,22 +161,27 @@ JSON schema:
 
 
 class ConversationEngine:
-    """Handles Claude API calls for dialogue generation and summarisation."""
+    """Handles DeepSeek API calls for dialogue generation and summarisation."""
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
-        key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self._api_key = key
-        self._client: Optional[anthropic.Anthropic] = None
+    def __init__(self, api_key: Optional[str] = None,
+                 base_url: Optional[str] = None,
+                 model: Optional[str] = None) -> None:
+        self._api_key = api_key or os.getenv("DEEPSEEK_API_KEY", "")
+        self._base_url = base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        self._model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self._client: Optional[OpenAI] = None
 
     @property
-    def client(self) -> anthropic.Anthropic:
+    def client(self) -> OpenAI:
         if self._client is None:
             if not self._api_key:
-                raise RuntimeError(
-                    "ANTHROPIC_API_KEY not set. Set the environment variable or pass api_key."
-                )
-            self._client = anthropic.Anthropic(api_key=self._api_key)
+                raise RuntimeError("DEEPSEEK_API_KEY not set.")
+            self._client = OpenAI(api_key=self._api_key, base_url=self._base_url)
         return self._client
+
+    # ------------------------------------------------------------------
+    # Greet
+    # ------------------------------------------------------------------
 
     def greet(self, scene: dict) -> dict:
         """Generate the first greeting for a new conversation."""
@@ -185,18 +189,19 @@ class ConversationEngine:
             return self._fallback_greeting(scene)
 
         try:
-            prompt = (
-                f"You are a {scene['role']}. "
-                f"Greet the user to start a conversation in this scene: {scene['name']}. "
-                f"Keep it to 1-2 friendly sentences. Difficulty: {scene['difficulty']}."
-            )
-            resp = self.client.messages.create(
-                model="claude-sonnet-4-6",
+            resp = self.client.chat.completions.create(
+                model=self._model,
                 max_tokens=150,
-                system="Reply with a short, natural greeting only. No JSON.",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "Reply with a short, natural greeting only. No JSON."},
+                    {"role": "user", "content": (
+                        f"You are a {scene['role']}. "
+                        f"Greet the user to start a conversation in this scene: {scene['name']}. "
+                        f"Keep it to 1-2 friendly sentences. Difficulty: {scene['difficulty']}."
+                    )},
+                ],
             )
-            return {"text": resp.content[0].text.strip()}
+            return {"text": resp.choices[0].message.content.strip()}
         except Exception:
             return self._fallback_greeting(scene)
 
@@ -206,6 +211,10 @@ class ConversationEngine:
             "intermediate": f"Hi there! I'm your {scene['role']} today. Ready to get started?",
         }
         return {"text": greetings.get(scene.get("difficulty", "beginner"), greetings["beginner"])}
+
+    # ------------------------------------------------------------------
+    # Chat (non-streaming)
+    # ------------------------------------------------------------------
 
     def chat(self, scene: dict, history: list[dict], user_text: str) -> dict:
         """Generate AI reply + corrections + pronunciation note."""
@@ -219,33 +228,32 @@ class ConversationEngine:
                 difficulty=scene.get("difficulty", "beginner"),
                 grammar_focus=", ".join(scene.get("grammar_focus", [])),
             )
-            messages = self._build_history(history, user_text)
+            messages = self._build_messages(system, history, user_text)
 
-            resp = self.client.messages.create(
-                model="claude-sonnet-4-6",
+            resp = self.client.chat.completions.create(
+                model=self._model,
                 max_tokens=400,
-                system=system,
                 messages=messages,
             )
-            raw = resp.content[0].text.strip()
+            raw = resp.choices[0].message.content.strip()
             return self._parse_json(raw)
         except Exception:
             return self._fallback_chat(scene, user_text)
 
     def _fallback_chat(self, scene: dict, user_text: str) -> dict:
         return {
-            "reply": f"[模拟回复] You said: '{user_text}'. In a real setup with Claude API, I would respond naturally as a {scene['role']}.",
+            "reply": f"[模拟回复] You said: '{user_text}'. (Configure DEEPSEEK_API_KEY for AI replies)",
             "corrections": [],
             "pronunciation_note": "",
         }
 
+    # ------------------------------------------------------------------
+    # Chat (streaming)
+    # ------------------------------------------------------------------
+
     async def chat_stream(self, scene: dict, history: list[dict], user_text: str):
-        """
-        Async generator that yields SSE-formatted strings for streaming AI replies.
-        Yields: text_delta events, then corrections event, then done event.
-        """
+        """Async generator yielding SSE events for streaming AI replies."""
         if not self._api_key:
-            # Fallback: emit the fallback text as one chunk
             fb = self._fallback_chat(scene, user_text)
             yield f"data: {json.dumps({'type': 'text_delta', 'content': fb['reply']})}\n\n"
             yield f"data: {json.dumps({'type': 'corrections', 'data': fb['corrections']})}\n\n"
@@ -259,20 +267,21 @@ class ConversationEngine:
                 difficulty=scene.get("difficulty", "beginner"),
                 grammar_focus=", ".join(scene.get("grammar_focus", [])),
             )
-            messages = self._build_history(history, user_text)
+            messages = self._build_messages(system, history, user_text)
 
             full_text = ""
-            with self.client.messages.stream(
-                model="claude-sonnet-4-6",
+            stream = self.client.chat.completions.create(
+                model=self._model,
                 max_tokens=400,
-                system=system,
                 messages=messages,
-            ) as stream:
-                for text in stream.text_stream:
-                    full_text += text
-                    yield f"data: {json.dumps({'type': 'text_delta', 'content': text})}\n\n"
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    full_text += delta.content
+                    yield f"data: {json.dumps({'type': 'text_delta', 'content': delta.content})}\n\n"
 
-            # Parse the accumulated text for corrections
             parsed = self._parse_json(full_text)
             corrections = parsed.get("corrections", [])
             yield f"data: {json.dumps({'type': 'corrections', 'data': corrections})}\n\n"
@@ -283,6 +292,10 @@ class ConversationEngine:
             yield f"data: {json.dumps({'type': 'text_delta', 'content': fb['reply']})}\n\n"
             yield f"data: {json.dumps({'type': 'corrections', 'data': fb['corrections']})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    # ------------------------------------------------------------------
+    # Summarize
+    # ------------------------------------------------------------------
 
     def summarize(self, scene: dict, messages: list[dict]) -> dict:
         """Generate a summary report for the completed conversation."""
@@ -298,13 +311,15 @@ class ConversationEngine:
                 f"User: {m.get('user_text', '')}\nAI: {m.get('ai_text', '')}"
                 for m in messages
             )
-            resp = self.client.messages.create(
-                model="claude-sonnet-4-6",
+            resp = self.client.chat.completions.create(
+                model=self._model,
                 max_tokens=800,
-                system=system,
-                messages=[{"role": "user", "content": f"Conversation transcript:\n\n{transcript}"}],
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": f"Conversation transcript:\n\n{transcript}"},
+                ],
             )
-            raw = resp.content[0].text.strip()
+            raw = resp.choices[0].message.content.strip()
             return self._parse_json(raw)
         except Exception:
             return self._fallback_summary()
@@ -316,15 +331,17 @@ class ConversationEngine:
             "pronunciation_highlights": [],
             "vocabulary_used": [],
             "strengths": ["Good effort! (API unavailable — this is a placeholder summary)"],
-            "suggestions": ["设置有效的 ANTHROPIC_API_KEY 以获取真实 AI 评估"],
-            "encouragement": "你今天表现不错！配置有效的 Claude API Key 后可获得详细评估报告。",
+            "suggestions": ["设置有效的 DEEPSEEK_API_KEY 以获取真实 AI 评估"],
+            "encouragement": "你今天表现不错！配置有效的 DeepSeek API Key 后可获得详细评估报告。",
         }
 
     # ------------------------------------------------------------------
-    def _build_history(self, history: list[dict], user_text: str) -> list[dict]:
-        """Build Claude messages list from stored conversation history."""
-        msgs = []
-        # Include last 10 turns for context
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_messages(self, system: str, history: list[dict], user_text: str) -> list[dict]:
+        """Build OpenAI-format messages list: system + history + current user text."""
+        msgs = [{"role": "system", "content": system}]
         for turn in history[-10:]:
             if turn.get("user_text"):
                 msgs.append({"role": "user", "content": turn["user_text"]})
@@ -334,16 +351,14 @@ class ConversationEngine:
         return msgs
 
     def _parse_json(self, raw: str) -> dict:
-        """Parse Claude's JSON response, with fallback for markdown fences."""
+        """Parse JSON response, with fallback for markdown fences."""
         raw = raw.strip()
         if raw.startswith("```"):
-            # Strip markdown code fences
             lines = raw.split("\n")
             raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            # Fallback: treat entire response as plain reply
             return {
                 "reply": raw,
                 "corrections": [],
