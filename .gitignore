@@ -1,0 +1,17 @@
+# API keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+
+# Runtime data
+backend/data/conversations/
+
+# IDE
+.vscode/
+.idea/
