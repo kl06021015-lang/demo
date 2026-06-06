@@ -34,6 +34,11 @@ from database import (
     delete_conversation as db_delete_conversation,
     list_conversations,
     get_dashboard_stats,
+    set_goal,
+    get_active_goal,
+    do_checkin,
+    get_checkin_history,
+    get_streak,
 )
 
 # ---------------------------------------------------------------------------
@@ -379,10 +384,18 @@ def end_conversation(session_id: str):
     # Mark ended and persist summary
     doc = db_end_conversation(session_id, summary)
 
+    # Auto check-in when conversation ends
+    duration = _calc_duration(messages)
+    turns = len([m for m in messages if m.get("user_text")])
+    try:
+        do_checkin(minutes_practiced=int(duration), turns_completed=turns)
+    except Exception:
+        pass  # Check-in failure is non-fatal
+
     return {
         "session_id": session_id,
-        "duration_minutes": _calc_duration(messages),
-        "total_turns": len([m for m in messages if m.get("user_text")]),
+        "duration_minutes": duration,
+        "total_turns": turns,
         "summary": summary,
     }
 
@@ -494,6 +507,59 @@ h1 {{ text-align:center; font-size:22px; margin-bottom:8px; color:#2080f0 }}
     return HTMLResponse(content=html, headers={
         "Content-Disposition": f"attachment; filename=english-practice-report-{session_id}.html"
     })
+
+
+# ---------------------------------------------------------------------------
+# Routes — Goals & Check-ins
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/goals")
+def get_goals():
+    """Return active daily and weekly goals, plus current streak."""
+    daily = get_active_goal("daily")
+    weekly = get_active_goal("weekly")
+    streak = get_streak()
+    return {
+        "daily_goal": daily,
+        "weekly_goal": weekly,
+        "streak": streak,
+    }
+
+
+@app.post("/api/goals")
+def create_or_update_goal(payload: dict):
+    """Set a new learning goal. Deactivates previous goal of same type."""
+    goal_type = payload.get("goal_type", "daily")
+    target_minutes = payload.get("target_minutes", 10)
+
+    if goal_type not in ("daily", "weekly"):
+        raise HTTPException(status_code=400, detail="goal_type must be 'daily' or 'weekly'")
+    if not isinstance(target_minutes, int) or target_minutes < 1 or target_minutes > 600:
+        raise HTTPException(status_code=400, detail="target_minutes must be an integer between 1 and 600")
+
+    goal = set_goal(goal_type, target_minutes)
+    return {"goal": goal}
+
+
+@app.post("/api/checkins")
+def create_checkin(payload: dict | None = None):
+    """Record a manual check-in for today (upserts)."""
+    minutes = (payload or {}).get("minutes_practiced", 0)
+    turns = (payload or {}).get("turns_completed", 0)
+    checkin = do_checkin(minutes_practiced=minutes, turns_completed=turns)
+    streak = get_streak()
+    return {"checkin": checkin, "streak": streak}
+
+
+@app.get("/api/checkins")
+def list_checkins(days: int = 30):
+    """Return check-in history for the specified number of days."""
+    if days < 1 or days > 365:
+        days = 30
+    history = get_checkin_history(days)
+    streak = get_streak()
+    return {"checkins": history, "streak": streak}
 
 
 # ---------------------------------------------------------------------------

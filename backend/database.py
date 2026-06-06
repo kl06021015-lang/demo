@@ -60,6 +60,24 @@ def init_db() -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
+
+        CREATE TABLE IF NOT EXISTS goals (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            goal_type       TEXT NOT NULL DEFAULT 'daily',
+            target_minutes  INTEGER NOT NULL DEFAULT 10,
+            is_active       INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS checkins (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            checkin_date     TEXT NOT NULL,
+            minutes_practiced INTEGER NOT NULL DEFAULT 0,
+            turns_completed  INTEGER NOT NULL DEFAULT 0,
+            created_at       TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_checkins_date ON checkins(checkin_date);
     """)
     conn.commit()
     conn.close()
@@ -267,12 +285,196 @@ def get_dashboard_stats() -> dict:
 
     conn.close()
 
+    # Streak and check-in data
+    streak = get_streak()
+    checkins = get_checkin_history(7)  # Last 7 days for weekly progress
+    total_checkin_minutes = sum(c["minutes_practiced"] for c in checkins)
+
+    # Badges
+    badges: list[dict] = []
+    if streak["current_streak"] >= 3:
+        badges.append({"id": "streak_3", "name": "连续3天", "icon": "🔥", "description": f"连续打卡 {streak['current_streak']} 天"})
+    if streak["current_streak"] >= 7:
+        badges.append({"id": "streak_7", "name": "坚持一周", "icon": "⭐", "description": "连续打卡 7 天"})
+    if streak["current_streak"] >= 30:
+        badges.append({"id": "streak_30", "name": "月度之星", "icon": "🌟", "description": "连续打卡 30 天"})
+    if total_minutes >= 30:
+        badges.append({"id": "time_30", "name": "初露锋芒", "icon": "⏱️", "description": f"累计练习 {total_minutes} 分钟"})
+    if total_minutes >= 100:
+        badges.append({"id": "time_100", "name": "持之以恒", "icon": "💪", "description": f"累计练习 {total_minutes} 分钟"})
+    if total_minutes >= 500:
+        badges.append({"id": "time_500", "name": "英语达人", "icon": "🏆", "description": f"累计练习 {total_minutes} 分钟"})
+    if completed >= 5:
+        badges.append({"id": "complete_5", "name": "初试牛刀", "icon": "🎯", "description": f"完成 {completed} 次对话"})
+    if completed >= 20:
+        badges.append({"id": "complete_20", "name": "对话能手", "icon": "💬", "description": f"完成 {completed} 次对话"})
+    if avg_score >= 7.5 and completed >= 3:
+        badges.append({"id": "quality", "name": "优质表达", "icon": "✨", "description": f"平均评分 {avg_score}"})
+
+    # Active goal
+    goal = get_active_goal("daily")
+    weekly_goal = get_active_goal("weekly")
+
     return {
         "total_sessions": total,
         "completed_sessions": completed,
         "total_minutes": total_minutes,
         "average_score": avg_score,
         "scenes_practiced": scenes_practiced,
+        "streak": streak,
+        "badges": badges,
+        "weekly_checkins": checkins,
+        "weekly_minutes": total_checkin_minutes,
+        "goal": goal,
+        "weekly_goal": weekly_goal,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Goals & Check-ins
+# ---------------------------------------------------------------------------
+
+
+def set_goal(goal_type: str, target_minutes: int) -> dict:
+    """Deactivate existing goals of the same type, then insert a new active goal."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    # Deactivate existing goals of this type
+    conn.execute(
+        "UPDATE goals SET is_active = 0 WHERE goal_type = ? AND is_active = 1",
+        (goal_type,),
+    )
+    cur = conn.execute(
+        "INSERT INTO goals (goal_type, target_minutes, is_active, created_at) VALUES (?, ?, 1, ?)",
+        (goal_type, target_minutes, now),
+    )
+    conn.commit()
+    goal_id = cur.lastrowid
+    conn.close()
+    return {"id": goal_id, "goal_type": goal_type, "target_minutes": target_minutes, "is_active": True, "created_at": now}
+
+
+def get_active_goal(goal_type: str = "daily") -> dict | None:
+    """Return the current active goal of the given type, or None."""
+    conn = _connect()
+    row = conn.execute(
+        "SELECT * FROM goals WHERE goal_type = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+        (goal_type,),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return {"id": row["id"], "goal_type": row["goal_type"], "target_minutes": row["target_minutes"], "is_active": bool(row["is_active"]), "created_at": row["created_at"]}
+
+
+def do_checkin(minutes_practiced: int = 0, turns_completed: int = 0) -> dict:
+    """Record a check-in for today. Upserts if already checked in today."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+
+    existing = conn.execute(
+        "SELECT * FROM checkins WHERE checkin_date = ?", (today,)
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            "UPDATE checkins SET minutes_practiced = minutes_practiced + ?, turns_completed = turns_completed + ?, created_at = ? WHERE checkin_date = ?",
+            (minutes_practiced, turns_completed, now, today),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO checkins (checkin_date, minutes_practiced, turns_completed, created_at) VALUES (?, ?, ?, ?)",
+            (today, minutes_practiced, turns_completed, now),
+        )
+    conn.commit()
+
+    # Return updated row
+    row = conn.execute("SELECT * FROM checkins WHERE checkin_date = ?", (today,)).fetchone()
+    conn.close()
+    return {
+        "checkin_date": row["checkin_date"],
+        "minutes_practiced": row["minutes_practiced"],
+        "turns_completed": row["turns_completed"],
+        "created_at": row["created_at"],
+    }
+
+
+def get_checkin_history(days: int = 30) -> list[dict]:
+    """Return check-in records for the last N days."""
+    conn = _connect()
+    rows = conn.execute(
+        """
+        SELECT * FROM checkins
+        WHERE checkin_date >= date('now', ? || ' days')
+        ORDER BY checkin_date DESC
+        """,
+        (f"-{days}",),
+    ).fetchall()
+    conn.close()
+    return [
+        {
+            "checkin_date": r["checkin_date"],
+            "minutes_practiced": r["minutes_practiced"],
+            "turns_completed": r["turns_completed"],
+        }
+        for r in rows
+    ]
+
+
+def get_streak() -> dict:
+    """Calculate current streak and longest streak of consecutive check-in days."""
+    conn = _connect()
+    rows = conn.execute(
+        "SELECT checkin_date FROM checkins ORDER BY checkin_date DESC"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return {"current_streak": 0, "longest_streak": 0, "total_checkins": 0}
+
+    dates = sorted({r["checkin_date"] for r in rows})
+
+    # Calculate longest streak
+    longest = 0
+    current_run = 1
+    for i in range(1, len(dates)):
+        d1 = dates[i - 1]
+        d2 = dates[i]
+        # Check if d2 is the day after d1
+        from datetime import timedelta as td
+        d1_obj = datetime.strptime(d1, "%Y-%m-%d")
+        d2_obj = datetime.strptime(d2, "%Y-%m-%d")
+        if (d2_obj - d1_obj).days == 1:
+            current_run += 1
+        else:
+            longest = max(longest, current_run)
+            current_run = 1
+    longest = max(longest, current_run)
+
+    # Calculate current streak (how many consecutive days ending at today/latest)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    latest = dates[-1]
+    current_streak = 0
+    if latest == today or latest == (datetime.now(timezone.utc) - td(days=1)).strftime("%Y-%m-%d"):
+        # Count backwards from latest
+        from datetime import timedelta as td2
+        streak = 1
+        for i in range(len(dates) - 2, -1, -1):
+            prev = dates[i + 1]
+            curr = dates[i]
+            p_obj = datetime.strptime(prev, "%Y-%m-%d")
+            c_obj = datetime.strptime(curr, "%Y-%m-%d")
+            if (p_obj - c_obj).days == 1:
+                streak += 1
+            else:
+                break
+        current_streak = streak
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": longest,
+        "total_checkins": len(dates),
     }
 
 
