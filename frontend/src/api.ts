@@ -221,3 +221,7 @@ export async function* sendMessageStream(
 export function endConversation(sessionId: string): Promise<ConversationSummary> {
   return request(`/conversations/${sessionId}/end`, { method: 'POST' })
 }
+
+export function deleteConversation(sessionId: string): Promise<{ ok: boolean }> {
+  return request(`/conversations/${sessionId}`, { method: 'DELETE' })
+}
