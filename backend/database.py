@@ -56,6 +56,7 @@ def init_db() -> None:
             corrections_json    TEXT NOT NULL DEFAULT '[]',
             pronunciation_score REAL,
             pronunciation_note  TEXT NOT NULL DEFAULT '',
+            audio_path          TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (session_id) REFERENCES conversations(session_id)
         );
 
@@ -80,6 +81,14 @@ def init_db() -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS idx_checkins_date ON checkins(checkin_date);
     """)
     conn.commit()
+
+    # Migration: add audio_path column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE turns ADD COLUMN audio_path TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.close()
 
 
@@ -125,6 +134,7 @@ def get_conversation(session_id: str) -> Optional[dict]:
 
     messages = []
     for t in turn_rows:
+        ap = t["audio_path"] or ""
         messages.append({
             "turn": t["turn_number"],
             "user_text": t["user_text"],
@@ -137,6 +147,7 @@ def get_conversation(session_id: str) -> Optional[dict]:
                 else None
             ),
             "pronunciation_note": t["pronunciation_note"],
+            "audio_url": f"/api/audio/{session_id}/{ap}" if ap else None,
         })
 
     doc = {
@@ -187,8 +198,9 @@ def append_turn(session_id: str, turn_data: dict) -> None:
     conn.execute(
         """
         INSERT INTO turns (session_id, turn_number, user_text, corrected_text,
-                           ai_text, corrections_json, pronunciation_score, pronunciation_note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                           ai_text, corrections_json, pronunciation_score,
+                           pronunciation_note, audio_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
@@ -199,6 +211,7 @@ def append_turn(session_id: str, turn_data: dict) -> None:
             json.dumps(turn_data.get("corrections", []), ensure_ascii=False),
             json.dumps(score) if score else None,
             turn_data.get("pronunciation_note", ""),
+            turn_data.get("audio_path", ""),
         ),
     )
     conn.commit()
@@ -213,6 +226,14 @@ def delete_conversation(session_id: str) -> bool:
     deleted = conn.total_changes > 0
     conn.commit()
     conn.close()
+
+    # Clean up audio files on disk
+    if deleted:
+        import shutil
+        audio_dir = DATA_DIR / "audio" / session_id
+        if audio_dir.exists():
+            shutil.rmtree(str(audio_dir))
+
     return deleted
 
 

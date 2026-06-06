@@ -165,10 +165,20 @@ async def send_message(
 
     # --- Resolve user text ---
     user_text = ""
+    audio_path = ""  # relative path for DB storage
     if audio is not None and audio.filename:
         try:
             audio_bytes = await audio.read()
             user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+
+            # Save audio to disk for persistence
+            from database import DATA_DIR as DB_DATA_DIR
+            audio_dir = DB_DATA_DIR / "audio" / session_id
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            turn_num = len(doc.get("messages", []))
+            audio_filename = f"turn_{turn_num:03d}.wav"
+            (audio_dir / audio_filename).write_bytes(audio_bytes)
+            audio_path = audio_filename
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -220,6 +230,7 @@ async def send_message(
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
         "pronunciation_note": pronunciation_note,
+        "audio_path": audio_path,
     }
     convs.append_message(session_id, turn_data)
 
@@ -259,10 +270,19 @@ async def send_message_stream(
 
     # Resolve user text
     user_text = ""
+    audio_path = ""
     if audio is not None and audio.filename:
         try:
             audio_bytes = await audio.read()
             user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+            # Save audio to disk
+            from database import DATA_DIR as DB_DATA_DIR
+            audio_dir = DB_DATA_DIR / "audio" / session_id
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            turn_num = len(doc.get("messages", []))
+            audio_filename = f"turn_{turn_num:03d}.wav"
+            (audio_dir / audio_filename).write_bytes(audio_bytes)
+            audio_path = audio_filename
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -272,13 +292,6 @@ async def send_message_stream(
 
     if not user_text:
         raise HTTPException(status_code=400, detail="Empty input")
-
-    # Store the user turn AFTER streaming completes — we'll do it via a separate
-    # call from the frontend, or we can store it here. For simplicity, we store
-    # a placeholder turn first (the frontend will patch it or we use the stream).
-    # Actually the frontend will send a follow-up to finalize. But to keep it
-    # simple, we just stream and the frontend saves via the regular endpoint.
-    # We still need to stream corrections though.
 
     async def event_stream():
         accumulated_text = ""
@@ -323,6 +336,7 @@ async def send_message_stream(
             "corrections": corrections_data,
             "pronunciation_score": pronunciation_score,
             "pronunciation_note": pronunciation_note,
+            "audio_path": audio_path,
         })
 
         # Generate and send audio
@@ -507,6 +521,25 @@ h1 {{ text-align:center; font-size:22px; margin-bottom:8px; color:#2080f0 }}
     return HTMLResponse(content=html, headers={
         "Content-Disposition": f"attachment; filename=english-practice-report-{session_id}.html"
     })
+
+
+# ---------------------------------------------------------------------------
+# Routes — Audio playback
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/audio/{session_id}/{filename}")
+def serve_audio(session_id: str, filename: str):
+    """Serve a saved user voice recording."""
+    from database import DATA_DIR as DB_DATA_DIR
+    audio_path = DB_DATA_DIR / "audio" / session_id / filename
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail="Audio recording not found")
+    return FileResponse(
+        path=str(audio_path),
+        media_type="audio/wav",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,7 @@ interface MessageItem {
   corrections?: Correction[]
   pronunciationScore?: PronunciationScore | null
   audioBase64?: string
+  audioUrl?: string       // URL to user's voice recording
   timestamp?: string   // ISO timestamp for time separation
   prevTimestamp?: string
 }
@@ -126,6 +127,7 @@ async function loadHistory() {
             correctedText: m.corrected_text || undefined,
             corrections: m.corrections || [],
             pronunciationScore: m.pronunciation_score,
+            audioUrl: m.audio_url || undefined,
             timestamp: ts,
             prevTimestamp: prevTs,
           })
@@ -425,6 +427,7 @@ async function handleRegenerate() {
               :corrections="m.corrections"
               :pronunciation-score="m.pronunciationScore"
               :audio-base64="m.audioBase64"
+              :audio-url="m.audioUrl"
               @regenerate="handleRegenerate"
             />
           </div>

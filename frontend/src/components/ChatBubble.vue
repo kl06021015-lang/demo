@@ -12,6 +12,7 @@ const props = defineProps<{
   corrections?: Correction[]
   pronunciationScore?: PronunciationScore | null
   audioBase64?: string
+  audioUrl?: string              // URL to user's voice recording
   timestamp?: string             // ISO timestamp for time separators
 }>()
 
@@ -21,9 +22,10 @@ const emit = defineEmits<{
 
 const msg = useMessage()
 const audioPlaying = ref(false)
+const userAudioPlaying = ref(false)
 
 // ---------------------------------------------------------------------------
-// Audio playback
+// Audio playback (AI TTS)
 // ---------------------------------------------------------------------------
 function playAudio() {
   if (!props.audioBase64 || audioPlaying.value) return
@@ -41,6 +43,17 @@ function playAudio() {
       URL.revokeObjectURL(url)
     }
   } catch { audioPlaying.value = false }
+}
+
+// ---------------------------------------------------------------------------
+// Play user voice recording
+// ---------------------------------------------------------------------------
+function playUserAudio() {
+  if (!props.audioUrl || userAudioPlaying.value) return
+  userAudioPlaying.value = true
+  const audio = new Audio(props.audioUrl)
+  audio.play().catch(() => { userAudioPlaying.value = false })
+  audio.onended = () => { userAudioPlaying.value = false }
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +207,24 @@ const defaultAvatar = computed(() => {
       <NTag :type="pronunciationScore.overall >= 7 ? 'success' : pronunciationScore.overall >= 5 ? 'warning' : 'error'" size="small" round>
         🎤 发音 {{ pronunciationScore.overall.toFixed(1) }}
       </NTag>
+    </div>
+
+    <!-- User voice recording playback -->
+    <div
+      v-if="role === 'user' && audioUrl"
+      :style="{
+        marginTop: 'var(--spacing-xs)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }"
+    >
+      <NButton size="tiny" circle :type="userAudioPlaying ? 'primary' : 'default'" @click="playUserAudio">
+        <template #icon><SoundOutlined /></template>
+      </NButton>
+      <span :style="{ fontSize: 'var(--font-size-caption)', color: 'var(--color-text-tertiary)' }">
+        {{ userAudioPlaying ? '播放中...' : '回听录音' }}
+      </span>
     </div>
   </div>
 </template>
