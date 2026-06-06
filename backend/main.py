@@ -143,6 +143,21 @@ def delete_conversation(session_id: str):
     return {"ok": True, "session_id": session_id}
 
 
+@app.post("/api/conversations/{session_id}/hint")
+def get_hint(session_id: str):
+    """Generate contextual reply suggestions for the current conversation."""
+    doc = convs.load(session_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    scene = scenes.get_scene(doc["scene_id"])
+    if scene is None:
+        raise HTTPException(status_code=500, detail="Scene not found")
+
+    hints = engine.hint(scene, doc.get("messages", []))
+    return {"hints": hints}
+
+
 @app.post("/api/conversations/{session_id}/message")
 async def send_message(
     session_id: str,
