@@ -11,6 +11,7 @@ import {
   getConversation,
   sendMessage,
   sendMessageStream,
+  getHints,
   type ConversationRecord,
   type Correction,
   type PronunciationScore,
@@ -31,6 +32,9 @@ const textInput = ref('')
 const loading = ref(false)
 const error = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+const hints = ref<string[]>([])
+const hintsLoading = ref(false)
+const hintsVisible = ref(false)
 
 // --- Types ---
 interface MessageItem {
@@ -227,6 +231,26 @@ async function handleSendAudio(audioBlob: Blob) {
   }
 }
 
+async function handleHint() {
+  if (hintsLoading.value) return
+  hintsLoading.value = true
+  try {
+    const resp = await getHints(sessionId.value)
+    hints.value = resp.hints || []
+    hintsVisible.value = hints.value.length > 0
+  } catch {
+    hints.value = []
+    msg.warning('Failed to load hints')
+  } finally {
+    hintsLoading.value = false
+  }
+}
+
+function useHint(hint: string) {
+  textInput.value = hint
+  hintsVisible.value = false
+}
+
 function processResponse(resp: any) {
   const msgItem: MessageItem = {
     id: `a${Date.now()}`,
@@ -318,8 +342,32 @@ function scrollToBottom() {
       </div>
     </div>
 
+    <!-- Hint panel -->
+    <div v-if="hintsVisible && hints.length" style="padding:8px 16px;background:#f0f9ff;border-top:1px solid #d0e8ff">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:600;color:#2080f0">💡 不知道说什么？试试这些：</span>
+        <NButton text size="tiny" @click="hintsVisible = false">✕ 收起</NButton>
+      </div>
+      <NSpace vertical :size="6">
+        <div
+          v-for="(h, i) in hints"
+          :key="i"
+          style="padding:6px 10px;background:#fff;border-radius:8px;cursor:pointer;font-size:13px;
+                 border:1px solid #e0e0e0;transition:border-color 0.2s"
+          @click="useHint(h)"
+        >
+          {{ h }}
+        </div>
+      </NSpace>
+    </div>
+
     <!-- Input area -->
     <div style="padding:12px 16px;border-top:1px solid #eee;background:#fafafa">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <NButton size="tiny" :loading="hintsLoading" @click="handleHint" :disabled="loading">
+          💡 提示
+        </NButton>
+      </div>
       <NSpace align="end" style="width:100%">
         <NInput
           v-model:value="textInput"

@@ -158,6 +158,27 @@ JSON schema:
   "encouragement": "warm, specific encouragement in Chinese"
 }}
 """
+HINT_SYSTEM = """\
+You are an English speaking practice assistant. Your student is a Chinese English learner who is struggling to think of what to say. Based on the scene context and conversation history, suggest 3 possible replies they could say to keep the conversation going.
+
+Respond with ONLY a valid JSON object — no other text, no markdown fences.
+
+JSON schema:
+{{
+  "hints": [
+    "suggested reply 1 in English",
+    "suggested reply 2 in English",
+    "suggested reply 3 in English"
+  ]
+}}
+
+Rules:
+- Hints must be natural spoken English, 1-2 sentences each
+- Match the difficulty level ({difficulty})
+- Stay in-character for the scene ({scene_name})
+- Vary the approach: one direct, one question, one creative
+- Include hints that use the grammar focus ({grammar_focus}) when natural
+"""
 
 
 class ConversationEngine:
@@ -211,6 +232,53 @@ class ConversationEngine:
             "intermediate": f"Hi there! I'm your {scene['role']} today. Ready to get started?",
         }
         return {"text": greetings.get(scene.get("difficulty", "beginner"), greetings["beginner"])}
+
+    # ------------------------------------------------------------------
+    # Hint
+    # ------------------------------------------------------------------
+
+    def hint(self, scene: dict, history: list[dict]) -> list[str]:
+        """Generate 3 contextual reply suggestions for the user."""
+        if not self._api_key:
+            return [
+                f"You can say: Hello, nice to meet you!",
+                f"You can ask: How are you today?",
+                f"You can say: I'd like to practice English.",
+            ]
+
+        try:
+            system = HINT_SYSTEM.format(
+                scene_name=scene["name"],
+                difficulty=scene.get("difficulty", "beginner"),
+                grammar_focus=", ".join(scene.get("grammar_focus", [])),
+            )
+
+            # Build conversation context
+            context_lines = []
+            for turn in history[-4:]:  # last 4 turns only
+                if turn.get("user_text"):
+                    context_lines.append(f"Student: {turn['user_text']}")
+                if turn.get("ai_text"):
+                    context_lines.append(f"You (as {scene['role']}): {turn['ai_text']}")
+            context = "\n".join(context_lines) if context_lines else "(This is the start of the conversation)"
+
+            resp = self.client.chat.completions.create(
+                model=self._model,
+                max_tokens=200,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": f"Conversation so far:\n{context}\n\nThe student doesn't know what to say next. Give them 3 suggested replies in English."},
+                ],
+            )
+            raw = resp.choices[0].message.content.strip()
+            parsed = self._parse_json(raw)
+            return parsed.get("hints", [])
+        except Exception:
+            return [
+                f"You can say: Tell me more about that.",
+                f"You can ask: What do you think?",
+                f"You can say: That sounds great!",
+            ]
 
     # ------------------------------------------------------------------
     # Chat (non-streaming)

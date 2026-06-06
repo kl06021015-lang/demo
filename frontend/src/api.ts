@@ -225,3 +225,7 @@ export function endConversation(sessionId: string): Promise<ConversationSummary>
 export function deleteConversation(sessionId: string): Promise<{ ok: boolean }> {
   return request(`/conversations/${sessionId}`, { method: 'DELETE' })
 }
+
+export function getHints(sessionId: string): Promise<{ hints: string[] }> {
+  return request(`/conversations/${sessionId}/hint`, { method: 'POST' })
+}
