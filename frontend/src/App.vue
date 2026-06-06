@@ -14,6 +14,7 @@ const router = useRouter()
         </div>
         <NSpace>
           <NButton text @click="router.push({name:'home'})">场景选择</NButton>
+          <NButton text @click="router.push({name:'history'})">练习记录</NButton>
         </NSpace>
       </div>
       <div style="flex:1;overflow-y:auto">

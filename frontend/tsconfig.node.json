@@ -5,7 +5,8 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "composite": true,
+    "noEmit": false
   },
   "include": ["vite.config.ts"]
 }

@@ -27,7 +27,12 @@ from services import (
     SpeechService,
     DATA_DIR,
 )
-from database import init_db, migrate_json_to_sqlite, end_conversation as db_end_conversation
+from database import (
+    init_db,
+    migrate_json_to_sqlite,
+    end_conversation as db_end_conversation,
+    list_conversations,
+)
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -68,6 +73,17 @@ def list_scenes():
 # ---------------------------------------------------------------------------
 # Routes — Conversations
 # ---------------------------------------------------------------------------
+
+@app.get("/api/conversations")
+def list_conversation_list(limit: int = 20):
+    """Return a list of recent conversations (history)."""
+    items = list_conversations(limit)
+    # Look up scene names
+    for item in items:
+        scene = scenes.get_scene(item["scene_id"])
+        item["scene_name"] = scene["name"] if scene else item["scene_id"]
+    return {"conversations": items}
+
 
 @app.post("/api/conversations")
 def create_conversation(payload: dict):

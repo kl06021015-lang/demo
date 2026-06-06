@@ -61,6 +61,7 @@ export interface ConversationRecord {
   created_at: string
   ended_at: string | null
   messages: TurnData[]
+  summary?: SummaryData
 }
 
 export interface GrammarHighlight {
@@ -91,6 +92,16 @@ export interface ConversationSummary {
   duration_minutes: number
   total_turns: number
   summary: SummaryData
+}
+
+export interface ConversationListItem {
+  session_id: string
+  scene_id: string
+  scene_name: string
+  created_at: string
+  ended_at: string | null
+  has_summary: boolean
+  turn_count: number
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +157,10 @@ export async function sendMessage(
     throw new Error(`API Error ${resp.status}: ${err}`)
   }
   return resp.json()
+}
+
+export function getConversationList(limit: number = 20): Promise<{ conversations: ConversationListItem[] }> {
+  return request(`/conversations?limit=${limit}`)
 }
 
 export function endConversation(sessionId: string): Promise<ConversationSummary> {
