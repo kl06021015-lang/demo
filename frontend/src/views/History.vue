@@ -46,8 +46,8 @@ async function handleDelete(item: ConversationListItem) {
 </script>
 
 <template>
-  <div style="max-width:800px;margin:0 auto;padding:32px 16px">
-    <h2 style="margin-bottom:24px">📋 练习记录</h2>
+  <div style="max-width:var(--max-width-narrow);margin:0 auto;padding:var(--spacing-xl) var(--spacing-md)">
+    <h2 style="margin-bottom:var(--spacing-lg);font-size:var(--font-size-heading)">📋 练习记录</h2>
 
     <NSpin :show="loading">
       <NEmpty v-if="!loading && items.length === 0" description="还没有练习记录，快去开始练习吧！">
@@ -67,7 +67,7 @@ async function handleDelete(item: ConversationListItem) {
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <div style="flex:1;min-width:200px">
               <div style="font-weight:600;font-size:15px;margin-bottom:4px">{{ item.scene_name }}</div>
-              <div style="font-size:12px;color:#999">
+              <div style="font-size:var(--font-size-caption);color:var(--color-text-tertiary)">
                 🕐 {{ formatDate(item.created_at) }}
               </div>
             </div>

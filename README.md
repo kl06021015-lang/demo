@@ -1,37 +1,97 @@
 # 🎯 AI 英语口语练习 (AI English Speaking Practice)
 
-基于 Claude API 的 AI 英语口语对话练习工具 — 在模拟真实场景中与 AI 角色对话，获得实时语法纠正、发音评分和课后学习报告。
+基于 Claude API 的 AI 英语口语对话练习工具 — 在模拟真实场景中与 AI 角色对话，获得实时语法纠正、发音评分、语音回听和课后学习报告。支持 Duolingo 风格的学习激励系统（目标打卡、连续天数、XP 等级、成就徽章）。
 
 ## ✨ 功能介绍
 
+### 🎬 场景化对话
+| 场景 | 难度 | 角色 |
+|------|------|------|
+| ☕ 咖啡店点单 | 初级 | 👨‍🍳 咖啡师 |
+| 🏨 酒店入住 | 初级 | 🏨 前台接待 |
+| 🍽️ 餐厅点餐 | 初级 | 🍽️ 服务员 |
+| 🛍️ 商场购物 | 初级 | 🛍️ 导购 |
+| 🏥 看医生 | 中级 | 👨‍⚕️ 医生 |
+| 🏠 租房看房 | 中级 | 🏠 房东/中介 |
+| 💼 工作面试 | 中级 | 💼 HR |
+| 🎓 学术讨论 | 高级 | 👨‍🏫 教授 |
+| 🎤 英语辩论 | 高级 | 👨‍⚖️ 辩论裁判 |
+
+每个场景包含独立角色设定、System Prompt、推荐词汇表和语法重点，支持**难度筛选**和**进度追踪**。
+
+### 🎤 语音交互
+
 | 功能 | 说明 |
 |------|------|
-| 🎬 **场景化对话** | 6 个预设场景：咖啡店、酒店、餐厅、购物、看医生、工作面试，每个场景有独立角色、推荐词汇和语法重点 |
-| 🎤 **语音输入** | 浏览器录音，通过 OpenAI Whisper 转写为文字 |
-| 🤖 **AI 对话引擎** | Claude API 驱动的角色扮演对话，根据难度级别调整语言风格 |
-| ✏️ **实时语法纠正** | AI 检测并纠正语法/用词/礼貌用语错误，附带中文解释 |
-| 🔊 **语音合成** | Edge-TTS 将 AI 回复合成为语音，支持自动播放 |
-| 📊 **发音评分** | 基于对话表现的动态发音评分 |
-| 📝 **课后总结** | 综合评分、语法薄弱点分析、发音重点、词汇积累、改进建议 |
+| 🔊 **语音输入** | 浏览器端 16kHz PCM/WAV 录制 → 讯飞实时语音识别 |
+| 🎙️ **录音回听** | 用户语音持久化存储，对话中/刷新/历史回放均可播放 |
+| 🔊 **AI 语音合成** | 多样 Edge-TTS 音色，自动播放 AI 回复 |
+
+### 🤖 AI 对话引擎
+
+| 功能 | 说明 |
+|------|------|
+| 💬 **流式回复** | SSE 流式传输，AI 回复逐字呈现 |
+| ✏️ **实时语法纠正** | 检测语法/用词/礼貌用语错误，附带中文解释 |
+| 🔄 **重新生成** | 对 AI 回复不满意可一键重新生成 |
+| 📋 **一键复制** | 复制 AI 回复文本 |
+| ⚡ **快捷回复** | 输入框上方显示场景相关的建议回复 |
+
+### 📊 学习激励系统
+
+| 功能 | 说明 |
+|------|------|
+| 🎯 **目标设定** | 每日/每周练习分钟目标，进度圈实时显示 |
+| 🔥 **连续打卡** | 自动/手动打卡，火焰动画激励 |
+| ⭐ **成就徽章** | 连续 3/7/30 天、累计时长、完成次数、高分评价等 9 种徽章 |
+| 🏆 **XP 等级** | 基于练习时长和评分的经验值系统，升级解锁新场景 |
+| 📅 **学习热力图** | GitHub 风格 7×52 贡献矩阵，展示全年练习分布 |
+| 📈 **评分趋势** | 30 天综合评分折线图 |
+
+### 📝 学习报告
+
+| 功能 | 说明 |
+|------|------|
+| 🎯 **综合评分** | 对话级 1-10 分评分，彩色环形进度 |
+| ✅ **表现亮点** | AI 总结的语法/表达方面的进步 |
+| 📝 **语法薄弱点** | 高频错误类型、建议和例句 |
+| 🔊 **发音重点** | 需重点练习的音素和练习词汇 |
+| 💡 **改进建议** | 个性化的后续学习建议 |
+| 📥 **导出报告** | 一键下载独立 HTML 格式学习报告 |
+
+### 🎨 UI/UX 设计
+
+| 特性 | 说明 |
+|------|------|
+| 🌿 **Duolingo 风格** | 翠绿主色调 `#58CC02` + 暖橙强调色 `#FF9600` |
+| 🌙 **完整暗色模式** | Spotify/Linear 级别暗色方案，300ms 平滑过渡 |
+| ✨ **微交互动画** | 撒花特效、骨架屏加载、弹簧消息入场、录音波形 |
+| 📱 **响应式布局** | 适配桌面和移动端 |
+| 🔤 **Inter 字体** | 专业级英文字体，优秀可读性 |
+
+---
 
 ## 🛠️ 技术栈
 
 | 层级 | 技术 | 用途 |
 |------|------|------|
-| **前端框架** | Vue 3 (Composition API) + TypeScript | SPA 应用 |
-| **UI 组件库** | Naive UI 2.x | 卡片、标签、进度、消息提示等 |
+| **前端框架** | Vue 3.5 (Composition API) + TypeScript | SPA 应用 |
+| **UI 组件库** | Naive UI 2.x | 组件库 + 主题系统 |
 | **图标** | @vicons/antd | Ant Design 图标集 |
 | **构建工具** | Vite 6 | 开发服务器 + 生产打包 |
 | **路由** | Vue Router 4 (Hash 模式) | 前端路由 |
-| **后端框架** | FastAPI (Python 3.12) | RESTful API |
-| **AI 对话** | Anthropic Claude API (claude-sonnet-4-6) | 角色扮演对话生成、语法纠正、学习总结 |
-| **语音识别** | OpenAI Whisper API | 语音转文字 |
-| **语音合成** | Edge-TTS | 文字转语音（免费、高质量） |
-| **数据存储** | JSON 文件 (MVP) → SQLite (v1.1) | 对话记录持久化 |
+| **后端框架** | FastAPI (Python 3.12) | RESTful API + SSE 流式 |
+| **数据库** | SQLite (WAL 模式) | 对话/目标/打卡持久化 |
+| **AI 对话** | Anthropic Claude API | 角色扮演 + 语法纠正 + 学习总结 |
+| **语音识别** | 讯飞语音听写 API (WebSocket) | 实时语音转文字 |
+| **语音合成** | Edge-TTS | 多音色文字转语音（免费） |
+| **设计系统** | CSS 自定义属性 (60+ tokens) | 亮/暗主题统一设计令牌 |
+
+---
 
 ## 📦 第三方依赖
 
-### 前端 (Node.js)
+### 前端
 
 | 包名 | 版本 | 用途 |
 |------|------|------|
@@ -42,9 +102,8 @@
 | `vite` | ^6.0.0 | 构建工具 |
 | `@vitejs/plugin-vue` | ^5.1.0 | Vite Vue 插件 |
 | `typescript` | ~5.6.0 | 类型检查 |
-| `vue-tsc` | ^2.2.0 | Vue TypeScript 编译器 |
 
-### 后端 (Python)
+### 后端
 
 | 包名 | 版本 | 用途 |
 |------|------|------|
@@ -53,23 +112,29 @@
 | `python-multipart` | >=0.0.9 | 文件上传（音频） |
 | `python-dotenv` | >=1.0.0 | 环境变量加载 |
 | `anthropic` | >=0.40.0 | Claude API SDK |
-| `openai` | >=1.60.0 | Whisper API SDK |
+| `openai` | >=1.60.0 | DeepSeek API（兼容接口） |
 | `edge-tts` | >=6.1.0 | 微软 Edge TTS 合成 |
+| `websockets` | >=12.0 | 讯飞 WebSocket STT |
 
-## 💡 原创功能说明
+---
+
+## 💡 原创功能设计
 
 本项目在以下方面进行了自主设计与开发：
 
-- **完整应用架构** — Vue 3 SPA + FastAPI 的全栈架构设计，包括组件树设计、路由规划、API 接口设计、状态流转
-- **对话引擎** — 基于 Claude API 的角色扮演对话系统，包含 System Prompt 设计、JSON Schema 约束、上下文窗口管理（最近 10 轮）、降级模拟模式
-- **语法纠正展示** — 前端 ChatBubble 组件以删除线原文 + 绿色纠正 + 中文解释的方式呈现语法纠正
-- **语音交互链路** — MediaRecorder → Whisper STT → Claude 对话 → Edge-TTS → 自动播放的完整语音闭环
-- **发音评分算法** — 基于 AI 纠正数量的动态评分模型（0 错误 8.5 分，1 错误 7.0 分，递增扣分）
-- **6 个场景设计** — 每个场景包含角色设定、System Prompt、推荐词汇表、语法重点，覆盖初/中两个难度级别
-- **课后报告 UI** — 综合评分的环形进度条 + 语法薄弱点（含出现次数和例句）+ 发音重点（含音素和练习词）+ 改进建议的分段展示
-- **优雅降级** — 未配置 API Key 时自动切换到模拟模式，所有功能不报错、给出明确提示
+- **完整全栈架构** — Vue 3 SPA + FastAPI 架构设计，包括组件树、路由规划、API 接口设计
+- **对话引擎** — 基于 Claude API 的角色扮演系统，System Prompt 设计、JSON Schema 约束、流式 SSE 传输
+- **语音交互闭环** — 前端 PCM/WAV 录制 → 讯飞 WebSocket STT → Claude 对话 → Edge-TTS → 自动播放，全链路自主实现
+- **WAV 编码** — 浏览器端纯 JS 手写 WAV 编码器（44 字节文件头 + 16-bit PCM），无需 ffmpeg
+- **发音评分算法** — 基于 AI 纠正数量的动态评分模型
+- **持续激励系统** — 目标打卡、滑动窗口连续天数计算、XP/等级曲线、成就徽章自动颁发
+- **学习热力图** — 纯 SVG 实现的 GitHub 风格贡献矩阵
+- **语音持久化** — 用户录音保存至磁盘，支持跨会话回放
+- **暗色模式** — 完整 CSS 自定义属性设计系统，60+ 令牌覆盖亮/暗双主题，300ms 平滑过渡
+- **9 个场景设计** — 覆盖初/中/高三个难度级别，每个场景含角色、Prompt、词汇、语法重点
+- **优雅降级** — API Key 未配置时自动切换模拟模式
 
-使用第三方库实现的功能：Naive UI 提供 UI 组件（卡片、标签、弹窗等），Vue Router 提供路由，Claude API 提供 AI 对话生成，Whisper 提供语音识别，Edge-TTS 提供语音合成。
+---
 
 ## 🚀 安装与运行
 
@@ -77,7 +142,7 @@
 
 - **Node.js** >= 18
 - **Python** >= 3.10
-- **Git** (可选，用于克隆仓库)
+- **Git**
 
 ### 1. 克隆项目
 
@@ -91,36 +156,39 @@ cd demo
 ```bash
 cd backend
 
-# 创建虚拟环境（推荐）
+# 创建虚拟环境
 python -m venv venv
 
 # 激活虚拟环境
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
+# Windows:  venv\Scripts\activate
+# Mac/Linux: source venv/bin/activate
 
 # 安装依赖
 pip install -r requirements.txt
 
 # 配置 API Key
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API Key
 ```
 
-### 3. 获取 API Key
-
-- **Anthropic API Key**: 访问 [console.anthropic.com](https://console.anthropic.com) 注册并获取
-- **OpenAI API Key**: 访问 [platform.openai.com](https://platform.openai.com) 注册并获取
-
-> **提示**: 未配置 API Key 也能启动应用，AI 对话将使用模拟模式。
+### 3. 配置 API Key
 
 编辑 `backend/.env`：
 
 ```env
+# Claude API (对话引擎) — https://console.anthropic.com
 ANTHROPIC_API_KEY=sk-ant-your-key-here
-OPENAI_API_KEY=sk-your-key-here
+
+# 讯飞语音识别 — https://console.xfyun.cn
+XFYUN_APP_ID=your-app-id
+XFYUN_API_KEY=your-api-key
+XFYUN_API_SECRET=your-api-secret
+
+# DeepSeek API (备选对话引擎)
+DEEPSEEK_API_KEY=sk-your-key-here
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 ```
+
+> 未配置 API Key 也能启动应用，AI 对话使用模拟模式。
 
 ### 4. 启动后端
 
@@ -129,70 +197,77 @@ cd backend
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-后端运行在 `http://localhost:8000`，API 文档自动生成于 `http://localhost:8000/docs`
+后端运行在 `http://localhost:8000`，API 文档：`http://localhost:8000/docs`
 
 ### 5. 启动前端
 
 ```bash
 cd frontend
-
-# 安装依赖（首次运行）
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-前端运行在 `http://localhost:3000`，API 请求自动代理到后端。
+前端运行在 `http://localhost:3000`，API 自动代理到后端。
 
-### 6. 验证
-
-1. 打开浏览器访问 `http://localhost:3000`
-2. 选择一个场景卡片（如「咖啡店点单」）
-3. 开始用英文与 AI 对话
-4. 点击「结束对话」查看课后总结
+---
 
 ## 📐 架构概览
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    浏览器 (Browser)                    │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │              Vue 3 SPA (Vite Dev Server :3000)   │ │
-│  │  ┌──────┐  ┌──────────┐  ┌──────────┐          │ │
-│  │  │ Home │  │ Practice │  │ Summary  │          │ │
-│  │  │ 场景  │  │  对话页   │  │  总结页   │          │ │
-│  │  └──────┘  └──────────┘  └──────────┘          │ │
-│  │       AudioRecorder  ·  ChatBubble              │ │
-│  └─────────────────────────────────────────────────┘ │
-│                         │  /api/*                     │
-│                         ▼  (Vite Proxy)               │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │          FastAPI Server (Uvicorn :8000)          │ │
-│  │  routes: scenes · conversations · message · end │ │
-│  │  ┌──────────────┐  ┌───────────────────────┐    │ │
-│  │  │ Conversation │  │    SpeechService      │    │ │
-│  │  │   Engine     │  │  Whisper STT · TTS    │    │ │
-│  │  │ (Claude API) │  │                       │    │ │
-│  │  └──────────────┘  └───────────────────────┘    │ │
-│  │  ┌──────────────┐  ┌───────────────────────┐    │ │
-│  │  │ Conversation │  │     SceneManager      │    │ │
-│  │  │   Manager    │  │   (scenes.json)       │    │ │
-│  │  │ (JSON files) │  │                       │    │ │
-│  │  └──────────────┘  └───────────────────────┘    │ │
-│  └─────────────────────────────────────────────────┘ │
-│           │                    │                      │
-│           ▼                    ▼                      │
-│    ┌─────────────┐    ┌──────────────┐               │
-│    │  Claude API │    │ OpenAI/Edge  │               │
-│    │  (对话/AI)   │    │ (语音/合成)   │               │
-│    └─────────────┘    └──────────────┘               │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     浏览器 (Browser)                          │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │           Vue 3 SPA (Vite :3000)                         │ │
+│  │  ┌────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │ │
+│  │  │  Home  │ │ Practice │ │Dashboard │ │ Summary  │      │ │
+│  │  │ 场景   │ │  对话页   │ │ 学习报告  │ │  课后总结 │      │ │
+│  │  └────────┘ └──────────┘ └──────────┘ └──────────┘      │ │
+│  │  ┌──────────┐ ┌───────────┐                              │ │
+│  │  │ History  │ │Pronunciation│ (即将推出)                   │ │
+│  │  │ 练习记录  │ │  发音练习   │                             │ │
+│  │  └──────────┘ └───────────┘                              │ │
+│  │                                                          │ │
+│  │  Components: ChatBubble · AudioRecorder · TypingBubble  │ │
+│  │             TimeSeparator · QuickReplies · Skeleton*    │ │
+│  │             HeatmapChart · ScoreTrendChart · Confetti   │ │
+│  │             FlameAnimation                               │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                          │  /api/*                             │
+│                          ▼  (Vite Proxy)                       │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │           FastAPI Server (Uvicorn :8000)                  │ │
+│  │                                                          │ │
+│  │  Routes: scenes · conversations · dashboard · goals     │ │
+│  │          checkins · audio · export · stream              │ │
+│  │                                                          │ │
+│  │  Services:                                               │ │
+│  │  ┌──────────────┐ ┌─────────────────┐ ┌──────────────┐  │ │
+│  │  │ Conversation │ │  SpeechService  │ │ SceneManager │  │ │
+│  │  │   Engine     │ │  iFlytek STT   │ │ scenes.json  │  │ │
+│  │  │ (Claude API) │ │  Edge TTS      │ │              │  │ │
+│  │  └──────────────┘ └─────────────────┘ └──────────────┘  │ │
+│  │                                                          │ │
+│  │  Database (SQLite):                                      │ │
+│  │  ┌──────────────┐ ┌──────────┐ ┌──────────┐            │ │
+│  │  │ conversations│ │  goals   │ │ checkins │            │ │
+│  │  │   + turns    │ │          │ │          │            │ │
+│  │  └──────────────┘ └──────────┘ └──────────┘            │ │
+│  │                                                          │ │
+│  │  File Storage:                                           │ │
+│  │  ┌──────────────────────────────────────────┐           │ │
+│  │  │  data/audio/{session_id}/turn_NNN.wav    │           │ │
+│  │  └──────────────────────────────────────────┘           │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│           │                    │                               │
+│           ▼                    ▼                               │
+│    ┌─────────────┐    ┌─────────────────┐                     │
+│    │  Claude API │    │  iFlytek / Edge │                     │
+│    │  (对话引擎)   │    │  (语音识别/合成) │                     │
+│    └─────────────┘    └─────────────────┘                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## 🎬 Demo 视频
-
-> 📺 [Demo 视频链接]（TODO: 上传至 B站/云盘后填入链接）
+---
 
 ## 📁 项目结构
 
@@ -201,32 +276,82 @@ english-practice/
 ├── README.md
 ├── .gitignore
 ├── 作品提交规范.md
+├── 改进与优化.md
+├── ui_及改进建议.md
+├── 语音录音持久化需求分析与实现方案.md
 ├── backend/
-│   ├── .env.example          # API Key 配置模板
-│   ├── requirements.txt      # Python 依赖
-│   ├── main.py               # FastAPI 入口 & 路由
-│   ├── services.py           # 核心业务逻辑
+│   ├── .env.example
+│   ├── requirements.txt
+│   ├── main.py                   # FastAPI 入口 & 全部路由
+│   ├── services.py               # 核心业务逻辑
+│   ├── database.py               # SQLite 数据库层
 │   └── data/
-│       ├── scenes.json       # 场景数据
-│       └── conversations/    # 对话记录（运行时生成）
+│       ├── scenes.json           # 场景数据 (9 个)
+│       ├── english_practice.db   # SQLite 数据库
+│       └── audio/                # 用户语音录音 (运行时生成)
 └── frontend/
     ├── index.html
     ├── package.json
     ├── vite.config.ts
     ├── tsconfig.json
     └── src/
-        ├── main.ts           # Vue 应用入口
-        ├── App.vue           # 根布局
-        ├── api.ts            # API 调用 & 类型定义
-        ├── router.ts         # 路由配置
+        ├── main.ts               # Vue 应用入口
+        ├── App.vue               # 根布局 + 导航 + 主题
+        ├── api.ts                # API 调用 & TypeScript 类型
+        ├── router.ts             # 路由配置
+        ├── styles/
+        │   └── theme.css         # 设计系统 (60+ CSS 自定义属性)
+        ├── composables/
+        │   ├── useTheme.ts       # 暗/亮主题管理 + Naive UI 集成
+        │   └── useScrollAnchor.ts # 智能滚动锚点
         ├── views/
-        │   ├── Home.vue      # 场景选择页
-        │   ├── Practice.vue  # 对话练习页
-        │   └── Summary.vue   # 课后总结页
+        │   ├── Home.vue          # 场景选择页
+        │   ├── Practice.vue      # 对话练习页
+        │   ├── Dashboard.vue     # 学习报告页
+        │   ├── Summary.vue       # 课后总结页
+        │   └── History.vue       # 练习记录页
         └── components/
-            ├── AudioRecorder.vue  # 语音录制组件
-            └── ChatBubble.vue     # 聊天气泡组件
+            ├── ChatBubble.vue        # 聊天气泡 (头像/纠错/操作)
+            ├── AudioRecorder.vue     # 语音录制 (PCM+WAV)
+            ├── chat/
+            │   ├── TypingBubble.vue  # AI 正在输入动画
+            │   ├── TimeSeparator.vue # 消息时间分隔线
+            │   └── QuickReplies.vue  # 快捷回复建议
+            ├── dashboard/
+            │   ├── HeatmapChart.vue   # GitHub 风格贡献热力图
+            │   └── ScoreTrendChart.vue # 30 天评分趋势图
+            ├── animations/
+            │   ├── ConfettiEffect.vue # 撒花动画
+            │   └── FlameAnimation.vue # 连续打卡火焰
+            └── skeleton/
+                ├── SkeletonCard.vue   # 卡片骨架屏
+                ├── SkeletonLine.vue   # 文本行骨架屏
+                └── SkeletonBubble.vue # 聊天气泡骨架屏
 ```
+
+---
+
+## 🔌 API 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/scenes` | 获取所有场景 |
+| `POST` | `/api/conversations` | 创建新对话 |
+| `GET` | `/api/conversations` | 对话历史列表 |
+| `GET` | `/api/conversations/{id}` | 获取完整对话记录 |
+| `DELETE` | `/api/conversations/{id}` | 删除对话 |
+| `POST` | `/api/conversations/{id}/message` | 发送消息 (文本/语音) |
+| `POST` | `/api/conversations/{id}/message/stream` | 流式发送消息 (SSE) |
+| `POST` | `/api/conversations/{id}/end` | 结束对话并生成总结 |
+| `GET` | `/api/conversations/{id}/export` | 导出 HTML 学习报告 |
+| `GET` | `/api/dashboard` | 学习统计仪表盘 |
+| `GET` | `/api/goals` | 获取活跃目标 |
+| `POST` | `/api/goals` | 设定学习目标 |
+| `POST` | `/api/checkins` | 记录打卡 |
+| `GET` | `/api/checkins` | 打卡历史 |
+| `GET` | `/api/audio/{session_id}/{filename}` | 播放用户语音录音 |
+
+---
 
 ## 📄 License
 

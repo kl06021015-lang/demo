@@ -10,6 +10,7 @@ export interface Scene {
   description: string
   difficulty: string
   icon: string
+  avatar: string
   suggested_vocabulary: string[]
   grammar_focus: string[]
 }
@@ -43,6 +44,7 @@ export interface MessageResponse {
   ai_reply: { text: string; audio_base64: string }
   corrections: Correction[]
   pronunciation_score: PronunciationScore | null
+  audio_url?: string | null
 }
 
 export interface TurnData {
@@ -87,6 +89,12 @@ export interface SummaryData {
   encouragement: string
 }
 
+export interface DailyScore {
+  date: string
+  avg_score: number
+  sessions: number
+}
+
 export interface SceneStats {
   scene_id: string
   count: number
@@ -99,6 +107,43 @@ export interface DashboardData {
   total_minutes: number
   average_score: number
   scenes_practiced: SceneStats[]
+  streak: StreakData
+  badges: Badge[]
+  weekly_checkins: CheckinRecord[]
+  weekly_minutes: number
+  goal: Goal | null
+  weekly_goal: Goal | null
+  daily_scores: DailyScore[]
+  xp: number
+  level: number
+  xp_for_next: number
+}
+
+export interface StreakData {
+  current_streak: number
+  longest_streak: number
+  total_checkins: number
+}
+
+export interface Badge {
+  id: string
+  name: string
+  icon: string
+  description: string
+}
+
+export interface Goal {
+  id: number
+  goal_type: string
+  target_minutes: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface CheckinRecord {
+  checkin_date: string
+  minutes_practiced: number
+  turns_completed: number
 }
 
 export interface ConversationSummary {
@@ -224,4 +269,50 @@ export function endConversation(sessionId: string): Promise<ConversationSummary>
 
 export function deleteConversation(sessionId: string): Promise<{ ok: boolean }> {
   return request(`/conversations/${sessionId}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Goals & Check-ins
+// ---------------------------------------------------------------------------
+
+export interface GoalsResponse {
+  daily_goal: Goal | null
+  weekly_goal: Goal | null
+  streak: StreakData
+}
+
+export interface CheckinResponse {
+  checkin: CheckinRecord
+  streak: StreakData
+}
+
+export interface CheckinListResponse {
+  checkins: CheckinRecord[]
+  streak: StreakData
+}
+
+export function getGoals(): Promise<GoalsResponse> {
+  return request('/goals')
+}
+
+export function setGoal(goalType: string, targetMinutes: number): Promise<{ goal: Goal }> {
+  return request('/goals', {
+    method: 'POST',
+    body: JSON.stringify({ goal_type: goalType, target_minutes: targetMinutes }),
+  })
+}
+
+export function createCheckin(opts?: {
+  minutes_practiced?: number
+  turns_completed?: number
+}): Promise<CheckinResponse> {
+  return request('/checkins', {
+    method: 'POST',
+    body: JSON.stringify(opts || {}),
+  })
+}
+
+export function getCheckins(days?: number): Promise<CheckinListResponse> {
+  const params = days ? `?days=${days}` : ''
+  return request(`/checkins${params}`)
 }

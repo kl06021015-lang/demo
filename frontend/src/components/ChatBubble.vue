@@ -1,20 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NSpace, NTag, NButton, NPopover, NIcon, NTooltip } from 'naive-ui'
-import { SoundOutlined, ExclamationCircleOutlined, CheckCircleOutlined } from '@vicons/antd'
+import { ref, computed } from 'vue'
+import { NSpace, NTag, NButton, NIcon, NTooltip, useMessage } from 'naive-ui'
+import { SoundOutlined, CopyOutlined, ReloadOutlined } from '@vicons/antd'
 import type { Correction, PronunciationScore } from '../api'
 
 const props = defineProps<{
   role: 'user' | 'ai' | 'system'
   text: string
+  avatar?: string               // emoji avatar for AI messages
   correctedText?: string
   corrections?: Correction[]
   pronunciationScore?: PronunciationScore | null
   audioBase64?: string
+  audioUrl?: string              // URL to user's voice recording
+  timestamp?: string             // ISO timestamp for time separators
 }>()
 
-const audioPlaying = ref(false)
+const emit = defineEmits<{
+  regenerate: []
+}>()
 
+const msg = useMessage()
+const audioPlaying = ref(false)
+const userAudioPlaying = ref(false)
+
+// ---------------------------------------------------------------------------
+// Audio playback (AI TTS)
+// ---------------------------------------------------------------------------
 function playAudio() {
   if (!props.audioBase64 || audioPlaying.value) return
   try {
@@ -33,15 +45,49 @@ function playAudio() {
   } catch { audioPlaying.value = false }
 }
 
+// ---------------------------------------------------------------------------
+// Play user voice recording
+// ---------------------------------------------------------------------------
+function playUserAudio() {
+  if (!props.audioUrl || userAudioPlaying.value) return
+  userAudioPlaying.value = true
+  const audio = new Audio(props.audioUrl)
+  audio.play().catch(() => { userAudioPlaying.value = false })
+  audio.onended = () => { userAudioPlaying.value = false }
+}
+
+// ---------------------------------------------------------------------------
+// Copy to clipboard
+// ---------------------------------------------------------------------------
+async function copyText() {
+  try {
+    await navigator.clipboard.writeText(props.text)
+    msg.success('已复制到剪贴板')
+  } catch {
+    msg.error('复制失败')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Correction type color
+// ---------------------------------------------------------------------------
 function correctionTypeColor(t: string) {
   const map: Record<string, string> = {
-    grammar: '#d03050',
-    word_choice: '#f0a020',
-    politeness: '#2080f0',
-    other: '#999',
+    grammar: 'var(--color-error)',
+    word_choice: 'var(--color-warning)',
+    politeness: 'var(--color-primary)',
+    other: 'var(--color-text-tertiary)',
   }
-  return map[t] || '#999'
+  return map[t] || 'var(--color-text-tertiary)'
 }
+
+// ---------------------------------------------------------------------------
+// Avatar emoji map (fallback)
+// ---------------------------------------------------------------------------
+const defaultAvatar = computed(() => {
+  if (props.role !== 'ai') return ''
+  return props.avatar || '🤖'
+})
 </script>
 
 <template>
@@ -50,10 +96,24 @@ function correctionTypeColor(t: string) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: role === 'user' ? 'flex-end' : 'flex-start',
-      marginBottom: '16px',
+      marginBottom: 'var(--spacing-md)',
     }"
   >
-    <!-- AI audio playback -->
+    <!-- AI Avatar + Name row -->
+    <div
+      v-if="role === 'ai' && avatar"
+      :style="{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        marginBottom: '6px',
+        marginLeft: '4px',
+      }"
+    >
+      <span :style="{ fontSize: '22px' }">{{ avatar }}</span>
+    </div>
+
+    <!-- AI audio playback (above bubble) -->
     <div v-if="role === 'ai' && audioBase64" style="margin-bottom:4px">
       <NTooltip>
         <template #trigger>
@@ -70,44 +130,74 @@ function correctionTypeColor(t: string) {
       :style="{
         maxWidth: '75%',
         padding: '10px 16px',
-        borderRadius: '16px',
-        background: role === 'user' ? '#2080f0' : role === 'system' ? '#f6f6f6' : '#f0f7ff',
-        color: role === 'user' ? '#fff' : '#333',
-        fontSize: '15px',
-        lineHeight: '1.6',
+        borderRadius: 'var(--radius-lg)',
+        borderBottomRightRadius: role === 'user' ? '4px' : undefined,
+        borderBottomLeftRadius: role === 'ai' ? '4px' : undefined,
+        background: role === 'user'
+          ? 'linear-gradient(135deg, var(--color-primary), var(--color-primary-active))'
+          : role === 'system'
+            ? 'var(--color-bg-input)'
+            : 'var(--color-bg-card)',
+        color: role === 'user'
+          ? 'var(--color-text-inverse)'
+          : 'var(--color-text-primary)',
+        fontSize: 'var(--font-size-body)',
+        lineHeight: 'var(--line-height-tight)',
         wordBreak: 'break-word',
         position: 'relative',
+        boxShadow: 'var(--shadow-xs)',
       }"
     >
       <!-- Corrected text hint for user messages -->
-      <div v-if="correctedText && correctedText !== text" style="margin-bottom:6px;font-size:13px;opacity:0.85">
+      <div v-if="correctedText && correctedText !== text" style="margin-bottom:6px;font-size:var(--font-size-small);opacity:0.85">
         💡 {{ correctedText }}
       </div>
 
       {{ text }}
     </div>
 
+    <!-- Message actions (AI messages only) -->
+    <div
+      v-if="role === 'ai' && text"
+      :style="{
+        display: 'flex',
+        gap: '4px',
+        marginTop: '4px',
+        marginLeft: '4px',
+      }"
+    >
+      <NButton size="tiny" text @click="playAudio" :disabled="!audioBase64" :style="{ fontSize: 'var(--font-size-caption)' }">
+        🔊 朗读
+      </NButton>
+      <NButton size="tiny" text @click="copyText" :style="{ fontSize: 'var(--font-size-caption)' }">
+        📋 复制
+      </NButton>
+      <NButton size="tiny" text @click="emit('regenerate')" :style="{ fontSize: 'var(--font-size-caption)' }">
+        🔄 重新生成
+      </NButton>
+    </div>
+
     <!-- Corrections (user messages only) -->
-    <div v-if="role === 'user' && corrections?.length" style="margin-top:8px;max-width:75%">
+    <div v-if="role === 'user' && corrections?.length" style="margin-top:var(--spacing-sm);max-width:75%">
       <NSpace vertical :size="6">
         <div
           v-for="(c, i) in corrections"
           :key="i"
           :style="{
             padding: '6px 10px',
-            borderRadius: '8px',
-            background: '#fff8f0',
-            border: '1px solid #fedcbd',
-            fontSize: '13px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-bg-correction)',
+            border: '1px solid var(--color-border-correction)',
+            fontSize: 'var(--font-size-small)',
           }"
         >
           <div style="margin-bottom:2px">
             <NTag :color="{color:correctionTypeColor(c.type),textColor:'#fff'}" size="tiny">{{ c.type }}</NTag>
-            <span style="text-decoration:line-through;color:#d03050;margin-left:4px">{{ c.original }}</span>
-            <span style="color:#333"> → </span>
-            <span style="color:#18a058;font-weight:500">{{ c.corrected }}</span>
+            <span style="text-decoration:line-through;color:var(--color-error);margin-left:4px">{{ c.original }}</span>
+            <span style="color:var(--color-text-primary)"> → </span>
+            <span style="color:var(--color-success);font-weight:500">{{ c.corrected }}</span>
           </div>
-          <div style="color:#666;font-size:12px">{{ c.explanation }}</div>
+          <div style="color:var(--color-text-secondary);font-size:var(--font-size-caption)">{{ c.explanation }}</div>
         </div>
       </NSpace>
     </div>
@@ -118,5 +208,34 @@ function correctionTypeColor(t: string) {
         🎤 发音 {{ pronunciationScore.overall.toFixed(1) }}
       </NTag>
     </div>
+
+    <!-- User voice recording playback -->
+    <div
+      v-if="role === 'user' && audioUrl"
+      :style="{
+        marginTop: 'var(--spacing-xs)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }"
+    >
+      <NButton size="tiny" circle :type="userAudioPlaying ? 'primary' : 'default'" @click="playUserAudio">
+        <template #icon><SoundOutlined /></template>
+      </NButton>
+      <span :style="{ fontSize: 'var(--font-size-caption)', color: 'var(--color-text-tertiary)' }">
+        {{ userAudioPlaying ? '播放中...' : '回听录音' }}
+      </span>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/* Action buttons show subtle hover */
+:deep(.n-button--text) {
+  opacity: 0.6;
+  transition: opacity var(--transition-fast);
+}
+:deep(.n-button--text:hover) {
+  opacity: 1;
+}
+</style>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NCard, NButton, NTag, NSpin, NAlert, NSpace, NDivider } from 'naive-ui'
 import { endConversation, getConversation, type ConversationSummary, type SummaryData } from '../api'
+import ConfettiEffect from '../components/animations/ConfettiEffect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,6 +12,11 @@ const sessionId = route.params.sessionId as string
 const loading = ref(true)
 const error = ref('')
 const summary = ref<ConversationSummary | null>(null)
+
+const showConfetti = computed(() => {
+  const s = summary.value?.summary?.overall_score ?? 0
+  return s >= 7
+})
 
 onMounted(async () => {
   try {
@@ -65,22 +71,27 @@ async function exportReport() {
 }
 
 function scoreColor(s: number): string {
-  if (s >= 8) return '#18a058'
-  if (s >= 6) return '#f0a020'
-  return '#d03050'
+  if (s >= 8) return 'var(--color-success)'
+  if (s >= 6) return 'var(--color-warning)'
+  return 'var(--color-error)'
 }
 </script>
 
 <template>
-  <div style="max-width:800px;margin:0 auto;padding:32px 16px">
+  <div style="max-width:var(--max-width-narrow);margin:0 auto;padding:var(--spacing-xl) var(--spacing-md)">
     <NSpin :show="loading">
       <NAlert v-if="error" type="error" :title="error" style="margin-bottom:16px" />
 
       <template v-if="summary">
+        <!-- Confetti for high scores -->
+        <div v-if="showConfetti" style="position:relative">
+          <ConfettiEffect :particle-count="80" :duration="3000" />
+        </div>
+
         <!-- Overall Score -->
         <NCard style="text-align:center;margin-bottom:24px">
           <h2 style="margin-bottom:16px">📊 课后总结</h2>
-          <div style="font-size:14px;color:#666;margin-bottom:8px">
+          <div style="font-size:var(--font-size-small);color:var(--color-text-secondary);margin-bottom:8px">
             场景：{{ summary.summary.vocabulary_used?.length || 0 }} 个词汇 ·
             {{ summary.total_turns }} 轮对话 ·
             {{ summary.duration_minutes }} 分钟
@@ -90,14 +101,14 @@ function scoreColor(s: number): string {
               style="display:inline-flex;align-items:center;justify-content:center;
               width:120px;height:120px;border-radius:50%;
               border:6px solid currentColor;
-              background:#f9f9f9"
+              background:var(--color-bg-card)"
               :style="{ color: scoreColor(summary.summary.overall_score ?? 0) }"
             >
               <div>
                 <div style="font-size:36px;font-weight:700" :style="{color:scoreColor(summary.summary.overall_score ?? 0)}">
                   {{ (summary.summary.overall_score ?? 0).toFixed(1) }}
                 </div>
-                <div style="font-size:12px;color:#999;margin-top:2px">综合评分</div>
+                <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:2px">综合评分</div>
               </div>
             </div>
           </div>
@@ -117,7 +128,7 @@ function scoreColor(s: number): string {
               <NTag type="error" size="small">{{ g.count }}次</NTag>
               <strong>{{ g.pattern }}</strong>
             </NSpace>
-            <div style="color:#666;font-size:13px;margin-bottom:4px">{{ g.suggestion }}</div>
+            <div style="color:var(--color-text-secondary);font-size:var(--font-size-small);margin-bottom:4px">{{ g.suggestion }}</div>
             <NSpace v-if="g.examples?.length" :size="4" wrap>
               <NTag v-for="ex in g.examples" :key="ex" size="tiny" type="warning">"{{ ex }}"</NTag>
             </NSpace>
@@ -130,7 +141,7 @@ function scoreColor(s: number): string {
             <div style="font-weight:600;margin-bottom:4px">
               音素 <NTag type="info" size="small">{{ p.phoneme }}</NTag>
             </div>
-            <div style="color:#666;font-size:13px;margin-bottom:4px">问题：{{ p.issue }}</div>
+            <div style="color:var(--color-text-secondary);font-size:var(--font-size-small);margin-bottom:4px">问题：{{ p.issue }}</div>
             <NSpace :size="4" wrap>
               <NTag v-for="w in p.practice_words" :key="w" size="tiny" type="success">练习：{{ w }}</NTag>
             </NSpace>
@@ -145,8 +156,8 @@ function scoreColor(s: number): string {
         </NCard>
 
         <!-- Encouragement -->
-        <NCard v-if="summary.summary.encouragement" style="text-align:center;background:#f0f9ff;margin-bottom:24px">
-          <div style="font-size:16px;line-height:1.8;color:#2080f0">
+        <NCard v-if="summary.summary.encouragement" style="text-align:center;background:var(--color-bg-encourage);margin-bottom:24px">
+          <div style="font-size:var(--font-size-subheading);line-height:var(--line-height);color:var(--color-primary)">
             {{ summary.summary.encouragement }}
           </div>
         </NCard>

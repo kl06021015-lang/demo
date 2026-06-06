@@ -54,7 +54,7 @@ class SceneManager:
         return self._scenes
 
     def list_scenes(self) -> list[dict]:
-        """Return all scenes (id, name, description, difficulty, icon)."""
+        """Return all scenes (id, name, description, difficulty, icon, avatar)."""
         return [
             {
                 "id": s["id"],
@@ -62,6 +62,7 @@ class SceneManager:
                 "description": s["description"],
                 "difficulty": s["difficulty"],
                 "icon": s.get("icon", ""),
+                "avatar": s.get("avatar", ""),
                 "suggested_vocabulary": s.get("suggested_vocabulary", []),
                 "grammar_focus": s.get("grammar_focus", []),
             }

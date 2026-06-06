@@ -34,6 +34,11 @@ from database import (
     delete_conversation as db_delete_conversation,
     list_conversations,
     get_dashboard_stats,
+    set_goal,
+    get_active_goal,
+    do_checkin,
+    get_checkin_history,
+    get_streak,
 )
 
 # ---------------------------------------------------------------------------
@@ -160,10 +165,20 @@ async def send_message(
 
     # --- Resolve user text ---
     user_text = ""
+    audio_path = ""  # relative path for DB storage
     if audio is not None and audio.filename:
         try:
             audio_bytes = await audio.read()
             user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+
+            # Save audio to disk for persistence
+            from database import DATA_DIR as DB_DATA_DIR
+            audio_dir = DB_DATA_DIR / "audio" / session_id
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            turn_num = len(doc.get("messages", []))
+            audio_filename = f"turn_{turn_num:03d}.wav"
+            (audio_dir / audio_filename).write_bytes(audio_bytes)
+            audio_path = audio_filename
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -215,6 +230,7 @@ async def send_message(
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
         "pronunciation_note": pronunciation_note,
+        "audio_path": audio_path,
     }
     convs.append_message(session_id, turn_data)
 
@@ -225,6 +241,7 @@ async def send_message(
         "ai_reply": {"text": ai_text, "audio_base64": audio_base64},
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
+        "audio_url": f"/api/audio/{session_id}/{audio_path}" if audio_path else None,
     }
 
     # Fill corrected_text from corrections
@@ -254,10 +271,19 @@ async def send_message_stream(
 
     # Resolve user text
     user_text = ""
+    audio_path = ""
     if audio is not None and audio.filename:
         try:
             audio_bytes = await audio.read()
             user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+            # Save audio to disk
+            from database import DATA_DIR as DB_DATA_DIR
+            audio_dir = DB_DATA_DIR / "audio" / session_id
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            turn_num = len(doc.get("messages", []))
+            audio_filename = f"turn_{turn_num:03d}.wav"
+            (audio_dir / audio_filename).write_bytes(audio_bytes)
+            audio_path = audio_filename
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
@@ -267,13 +293,6 @@ async def send_message_stream(
 
     if not user_text:
         raise HTTPException(status_code=400, detail="Empty input")
-
-    # Store the user turn AFTER streaming completes — we'll do it via a separate
-    # call from the frontend, or we can store it here. For simplicity, we store
-    # a placeholder turn first (the frontend will patch it or we use the stream).
-    # Actually the frontend will send a follow-up to finalize. But to keep it
-    # simple, we just stream and the frontend saves via the regular endpoint.
-    # We still need to stream corrections though.
 
     async def event_stream():
         accumulated_text = ""
@@ -318,6 +337,7 @@ async def send_message_stream(
             "corrections": corrections_data,
             "pronunciation_score": pronunciation_score,
             "pronunciation_note": pronunciation_note,
+            "audio_path": audio_path,
         })
 
         # Generate and send audio
@@ -327,6 +347,10 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'audio', 'data': audio_b64})}\n\n"
         except Exception:
             pass
+
+        # Notify frontend of the persisted audio_url
+        if audio_path:
+            yield f"data: {json.dumps({'type': 'audio_url', 'data': f'/api/audio/{session_id}/{audio_path}'})}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -379,10 +403,18 @@ def end_conversation(session_id: str):
     # Mark ended and persist summary
     doc = db_end_conversation(session_id, summary)
 
+    # Auto check-in when conversation ends
+    duration = _calc_duration(messages)
+    turns = len([m for m in messages if m.get("user_text")])
+    try:
+        do_checkin(minutes_practiced=int(duration), turns_completed=turns)
+    except Exception:
+        pass  # Check-in failure is non-fatal
+
     return {
         "session_id": session_id,
-        "duration_minutes": _calc_duration(messages),
-        "total_turns": len([m for m in messages if m.get("user_text")]),
+        "duration_minutes": duration,
+        "total_turns": turns,
         "summary": summary,
     }
 
@@ -494,6 +526,78 @@ h1 {{ text-align:center; font-size:22px; margin-bottom:8px; color:#2080f0 }}
     return HTMLResponse(content=html, headers={
         "Content-Disposition": f"attachment; filename=english-practice-report-{session_id}.html"
     })
+
+
+# ---------------------------------------------------------------------------
+# Routes — Audio playback
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/audio/{session_id}/{filename}")
+def serve_audio(session_id: str, filename: str):
+    """Serve a saved user voice recording."""
+    from database import DATA_DIR as DB_DATA_DIR
+    audio_path = DB_DATA_DIR / "audio" / session_id / filename
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail="Audio recording not found")
+    return FileResponse(
+        path=str(audio_path),
+        media_type="audio/wav",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Goals & Check-ins
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/goals")
+def get_goals():
+    """Return active daily and weekly goals, plus current streak."""
+    daily = get_active_goal("daily")
+    weekly = get_active_goal("weekly")
+    streak = get_streak()
+    return {
+        "daily_goal": daily,
+        "weekly_goal": weekly,
+        "streak": streak,
+    }
+
+
+@app.post("/api/goals")
+def create_or_update_goal(payload: dict):
+    """Set a new learning goal. Deactivates previous goal of same type."""
+    goal_type = payload.get("goal_type", "daily")
+    target_minutes = payload.get("target_minutes", 10)
+
+    if goal_type not in ("daily", "weekly"):
+        raise HTTPException(status_code=400, detail="goal_type must be 'daily' or 'weekly'")
+    if not isinstance(target_minutes, int) or target_minutes < 1 or target_minutes > 600:
+        raise HTTPException(status_code=400, detail="target_minutes must be an integer between 1 and 600")
+
+    goal = set_goal(goal_type, target_minutes)
+    return {"goal": goal}
+
+
+@app.post("/api/checkins")
+def create_checkin(payload: Optional[dict] = None):
+    """Record a manual check-in for today (upserts)."""
+    minutes = (payload or {}).get("minutes_practiced", 0)
+    turns = (payload or {}).get("turns_completed", 0)
+    checkin = do_checkin(minutes_practiced=minutes, turns_completed=turns)
+    streak = get_streak()
+    return {"checkin": checkin, "streak": streak}
+
+
+@app.get("/api/checkins")
+def list_checkins(days: int = 30):
+    """Return check-in history for the specified number of days."""
+    if days < 1 or days > 365:
+        days = 30
+    history = get_checkin_history(days)
+    streak = get_streak()
+    return {"checkins": history, "streak": streak}
 
 
 # ---------------------------------------------------------------------------
