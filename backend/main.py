@@ -34,6 +34,11 @@ from database import (
     delete_conversation as db_delete_conversation,
     list_conversations,
     get_dashboard_stats,
+    add_word,
+    list_words,
+    toggle_mastered as db_toggle_mastered,
+    delete_word as db_delete_word,
+    get_vocabulary_stats,
 )
 
 # ---------------------------------------------------------------------------
@@ -504,6 +509,49 @@ def _calc_duration(messages: list[dict]) -> float:
     """Estimate conversation duration in minutes (approx 30s per turn)."""
     turns = len([m for m in messages if m.get("user_text")])
     return round(turns * 0.5, 1)
+
+
+# ---------------------------------------------------------------------------
+# Routes — Vocabulary
+# ---------------------------------------------------------------------------
+
+@app.get("/api/vocabulary")
+def list_vocabulary(limit: int = 100, mastered: str | None = None):
+    """List vocabulary words."""
+    m_filter = None
+    if mastered == "true":
+        m_filter = 1
+    elif mastered == "false":
+        m_filter = 0
+    words = list_words(limit, m_filter)
+    return {"words": words, "stats": get_vocabulary_stats()}
+
+
+@app.post("/api/vocabulary")
+def create_word(payload: dict):
+    """Add a word to the vocabulary notebook."""
+    word_text = payload.get("word", "").strip()
+    if not word_text:
+        raise HTTPException(status_code=400, detail="word is required")
+    return add_word(word_text, payload.get("meaning", ""), payload.get("context", ""))
+
+
+@app.post("/api/vocabulary/{word_id}/toggle")
+def toggle_word(word_id: int):
+    """Toggle mastered status for a word."""
+    updated = db_toggle_mastered(word_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Word not found")
+    return updated
+
+
+@app.delete("/api/vocabulary/{word_id}")
+def delete_word(word_id: int):
+    """Delete a word from the vocabulary."""
+    deleted = db_delete_word(word_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Word not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

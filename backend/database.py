@@ -60,6 +60,17 @@ def init_db() -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
+
+        CREATE TABLE IF NOT EXISTS vocabulary (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            word       TEXT NOT NULL,
+            meaning    TEXT NOT NULL DEFAULT '',
+            context    TEXT NOT NULL DEFAULT '',
+            added_at   TEXT NOT NULL,
+            mastered   INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_word ON vocabulary(word);
     """)
     conn.commit()
     conn.close()
@@ -359,3 +370,71 @@ def migrate_json_to_sqlite() -> int:
     conv_dir.rename(backup_dir)
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary CRUD
+# ---------------------------------------------------------------------------
+
+def add_word(word: str, meaning: str = "", context: str = "") -> dict:
+    """Add a word to the vocabulary notebook. Returns the created record."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    cur = conn.execute(
+        "INSERT INTO vocabulary (word, meaning, context, added_at) VALUES (?, ?, ?, ?)",
+        (word.strip().lower(), meaning, context, now),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM vocabulary WHERE id = ?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def list_words(limit: int = 100, mastered: int | None = None) -> list[dict]:
+    """List vocabulary words, optionally filtered by mastered status."""
+    conn = _connect()
+    if mastered is None:
+        rows = conn.execute(
+            "SELECT * FROM vocabulary ORDER BY added_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM vocabulary WHERE mastered = ? ORDER BY added_at DESC LIMIT ?",
+            (mastered, limit),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def toggle_mastered(word_id: int) -> dict | None:
+    """Toggle the mastered flag for a word. Returns updated record."""
+    conn = _connect()
+    row = conn.execute("SELECT * FROM vocabulary WHERE id = ?", (word_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    new_val = 0 if row["mastered"] else 1
+    conn.execute("UPDATE vocabulary SET mastered = ? WHERE id = ?", (new_val, word_id))
+    conn.commit()
+    updated = conn.execute("SELECT * FROM vocabulary WHERE id = ?", (word_id,)).fetchone()
+    conn.close()
+    return dict(updated)
+
+
+def delete_word(word_id: int) -> bool:
+    """Delete a word by id. Returns True if found and deleted."""
+    conn = _connect()
+    conn.execute("DELETE FROM vocabulary WHERE id = ?", (word_id,))
+    deleted = conn.total_changes > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_vocabulary_stats() -> dict:
+    """Return vocabulary stats: total, mastered, learning."""
+    conn = _connect()
+    total = conn.execute("SELECT COUNT(*) FROM vocabulary").fetchone()[0]
+    mastered = conn.execute("SELECT COUNT(*) FROM vocabulary WHERE mastered = 1").fetchone()[0]
+    conn.close()
+    return {"total": total, "mastered": mastered, "learning": total - mastered}
