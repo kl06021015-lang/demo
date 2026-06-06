@@ -225,3 +225,83 @@ export function endConversation(sessionId: string): Promise<ConversationSummary>
 export function deleteConversation(sessionId: string): Promise<{ ok: boolean }> {
   return request(`/conversations/${sessionId}`, { method: 'DELETE' })
 }
+
+// ---------------------------------------------------------------------------
+// Pronunciation
+// ---------------------------------------------------------------------------
+
+export interface PhonemeSentence {
+  text: string
+  difficulty: string
+}
+
+export interface PhonemeGroup {
+  phoneme: string
+  title: string
+  description: string
+  sentences: PhonemeSentence[]
+}
+
+export interface WordScore {
+  word: string
+  score: number
+  match: boolean
+}
+
+export interface PronunciationScoreResult {
+  overall_score: number
+  accuracy: number
+  transcription: string
+  word_scores: WordScore[]
+  target_text: string
+}
+
+export interface PronunciationAttempt {
+  id: number
+  target_text: string
+  user_transcription: string
+  overall_score: number
+  accuracy: number
+  word_scores: WordScore[]
+  phoneme: string
+  created_at: string
+}
+
+export interface PronunciationProgress {
+  attempts: PronunciationAttempt[]
+  total_attempts: number
+  avg_score: number
+  avg_accuracy: number
+  last_practice: string | null
+}
+
+export function getPronunciationExercises(phoneme?: string): Promise<{
+  phoneme_exercises: PhonemeGroup[]
+  free_practice: PhonemeSentence[]
+}> {
+  const params = phoneme ? `?phoneme=${encodeURIComponent(phoneme)}` : ''
+  return request(`/pronunciation/exercises${params}`)
+}
+
+export async function scorePronunciation(
+  targetText: string,
+  audio: Blob,
+): Promise<PronunciationScoreResult> {
+  const form = new FormData()
+  form.append('target_text', targetText)
+  form.append('audio', audio, 'pronunciation.wav')
+  const resp = await fetch(`${BASE}/pronunciation/score`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!resp.ok) {
+    const err = await resp.text()
+    throw new Error(`API Error ${resp.status}: ${err}`)
+  }
+  return resp.json()
+}
+
+export function getPronunciationProgress(limit?: number): Promise<PronunciationProgress> {
+  const params = limit ? `?limit=${limit}` : ''
+  return request(`/pronunciation/progress${params}`)
+}

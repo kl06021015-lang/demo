@@ -41,6 +41,8 @@ const headerBorder = computed(() => isDark.value ? '1px solid rgb(51,51,51)' : '
             <NButton text @click="router.push({name:'home'})">场景选择</NButton>
             <NButton text @click="router.push({name:'history'})">练习记录</NButton>
             <NButton text @click="router.push({name:'dashboard'})">学习报告</NButton>
+            <NButton text @click="router.push({name:'vocabulary'})">生词本</NButton>
+            <NButton text @click="router.push({name:'pronunciation'})">发音练习</NButton>
             <NButton text @click="toggleTheme">
               <template #icon>
                 <NIcon><BulbOutlined /></NIcon>

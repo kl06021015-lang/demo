@@ -25,6 +25,7 @@ from services import (
     ConversationManager,
     ConversationEngine,
     SpeechService,
+    PronunciationService,
     DATA_DIR,
 )
 from database import (
@@ -34,6 +35,8 @@ from database import (
     delete_conversation as db_delete_conversation,
     list_conversations,
     get_dashboard_stats,
+    save_pronunciation_score,
+    get_pronunciation_progress,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,6 +57,7 @@ scenes = SceneManager()
 convs = ConversationManager()
 engine = ConversationEngine()
 speech = SpeechService()
+pron = PronunciationService(speech)
 
 # Ensure data directory exists and database is initialized
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -494,6 +498,57 @@ h1 {{ text-align:center; font-size:22px; margin-bottom:8px; color:#2080f0 }}
     return HTMLResponse(content=html, headers={
         "Content-Disposition": f"attachment; filename=english-practice-report-{session_id}.html"
     })
+
+
+# ---------------------------------------------------------------------------
+# Routes — Pronunciation practice
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/pronunciation/exercises")
+def get_pronunciation_exercises(phoneme: Optional[str] = None):
+    """Return phoneme-targeted exercise sentences for pronunciation practice."""
+    return {
+        "phoneme_exercises": pron.exercises(phoneme or ""),
+        "free_practice": pron.free_practice_sentences(),
+    }
+
+
+@app.post("/api/pronunciation/score")
+async def score_pronunciation(target_text: str = Form(...), audio: UploadFile = File(...)):
+    """Score a pronunciation attempt by comparing speech-to-text output with target."""
+    if not target_text.strip():
+        raise HTTPException(status_code=400, detail="target_text is required")
+
+    try:
+        audio_bytes = await audio.read()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to read audio file")
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio")
+
+    try:
+        result = await pron.score(audio_bytes, target_text.strip())
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Persist the attempt
+    save_pronunciation_score(
+        target_text=result["target_text"],
+        user_transcription=result["transcription"],
+        overall_score=result["overall_score"],
+        accuracy=result["accuracy"],
+        word_scores=result["word_scores"],
+    )
+
+    return result
+
+
+@app.get("/api/pronunciation/progress")
+def get_pronunciation_progress_route(limit: int = 50):
+    """Return pronunciation practice history and aggregate stats."""
+    return get_pronunciation_progress(limit)
 
 
 # ---------------------------------------------------------------------------

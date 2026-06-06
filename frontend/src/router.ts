@@ -27,4 +27,19 @@ export const routes: RouteRecordRaw[] = [
     name: 'dashboard',
     component: () => import('./views/Dashboard.vue'),
   },
+  {
+    path: '/replay/:sessionId',
+    name: 'replay',
+    component: () => import('./views/Replay.vue'),
+  },
+  {
+    path: '/vocabulary',
+    name: 'vocabulary',
+    component: () => import('./views/Vocabulary.vue'),
+  },
+  {
+    path: '/pronunciation',
+    name: 'pronunciation',
+    component: () => import('./views/Pronunciation.vue'),
+  },
 ]

@@ -60,6 +60,19 @@ def init_db() -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
+
+        CREATE TABLE IF NOT EXISTS pronunciation_scores (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_text     TEXT NOT NULL,
+            user_transcription TEXT NOT NULL DEFAULT '',
+            overall_score   REAL NOT NULL,
+            accuracy        REAL NOT NULL,
+            word_scores_json TEXT NOT NULL DEFAULT '[]',
+            phoneme         TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pronunciation_created ON pronunciation_scores(created_at);
     """)
     conn.commit()
     conn.close()
@@ -359,3 +372,88 @@ def migrate_json_to_sqlite() -> int:
     conv_dir.rename(backup_dir)
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# Pronunciation scores
+# ---------------------------------------------------------------------------
+
+
+def save_pronunciation_score(
+    target_text: str,
+    user_transcription: str,
+    overall_score: float,
+    accuracy: float,
+    word_scores: list[dict],
+    phoneme: str = "",
+) -> int:
+    """Save a pronunciation attempt and return the row id."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    cur = conn.execute(
+        """
+        INSERT INTO pronunciation_scores
+            (target_text, user_transcription, overall_score, accuracy, word_scores_json, phoneme, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            target_text,
+            user_transcription,
+            overall_score,
+            accuracy,
+            json.dumps(word_scores, ensure_ascii=False),
+            phoneme,
+            now,
+        ),
+    )
+    conn.commit()
+    row_id = cur.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_pronunciation_progress(limit: int = 50) -> list[dict]:
+    """Return recent pronunciation attempts with stats."""
+    conn = _connect()
+
+    rows = conn.execute(
+        """
+        SELECT * FROM pronunciation_scores
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    # Aggregate stats
+    stats = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_attempts,
+            AVG(overall_score) AS avg_score,
+            AVG(accuracy) AS avg_accuracy,
+            MAX(created_at) AS last_practice
+        FROM pronunciation_scores
+        """
+    ).fetchone()
+    conn.close()
+
+    return {
+        "attempts": [
+            {
+                "id": r["id"],
+                "target_text": r["target_text"],
+                "user_transcription": r["user_transcription"],
+                "overall_score": r["overall_score"],
+                "accuracy": r["accuracy"],
+                "word_scores": json.loads(r["word_scores_json"]),
+                "phoneme": r["phoneme"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ],
+        "total_attempts": stats["total_attempts"] if stats else 0,
+        "avg_score": round(stats["avg_score"] or 0, 1),
+        "avg_accuracy": round(stats["avg_accuracy"] or 0, 1),
+        "last_practice": stats["last_practice"],
+    }
