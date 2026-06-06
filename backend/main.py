@@ -151,8 +151,11 @@ async def send_message(
     # --- Resolve user text ---
     user_text = ""
     if audio is not None and audio.filename:
-        audio_bytes = await audio.read()
-        user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+        try:
+            audio_bytes = await audio.read()
+            user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     elif text:
         user_text = text.strip()
     else:
@@ -242,8 +245,11 @@ async def send_message_stream(
     # Resolve user text
     user_text = ""
     if audio is not None and audio.filename:
-        audio_bytes = await audio.read()
-        user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+        try:
+            audio_bytes = await audio.read()
+            user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     elif text:
         user_text = text.strip()
     else:

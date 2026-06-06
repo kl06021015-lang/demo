@@ -391,7 +391,7 @@ class SpeechService:
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
         """Transcribe audio bytes to text using Whisper API."""
         if not self._api_key:
-            return "[No OPENAI_API_KEY configured — cannot transcribe audio]"
+            raise RuntimeError("No OPENAI_API_KEY configured — cannot transcribe audio")
 
         suffix = Path(filename).suffix or ".webm"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -406,6 +406,14 @@ class SpeechService:
                     language="en",
                 )
             return resp.text.strip()
+        except Exception as e:
+            err_msg = str(e)
+            if "insufficient_quota" in err_msg.lower() or "429" in err_msg:
+                raise RuntimeError("OpenAI Whisper 额度已用完，请前往 platform.openai.com 充值。语音输入暂时不可用，请使用文字输入。")
+            elif "invalid" in err_msg.lower() or "401" in err_msg:
+                raise RuntimeError("OpenAI API Key 无效，语音输入暂时不可用，请使用文字输入。")
+            else:
+                raise RuntimeError(f"语音识别失败: {err_msg}")
         finally:
             os.unlink(tmp_path)
 
