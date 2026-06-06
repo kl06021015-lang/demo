@@ -18,7 +18,7 @@ function toggleTheme() {
   try { localStorage.setItem('theme', isDark.value ? 'dark' : 'light') } catch {}
 }
 
-const theme = computed(() => isDark.value ? darkTheme : undefined)
+const theme = computed(() => isDark.value ? darkTheme : null)
 
 // Theme-aware header styles
 const headerBg = computed(() => isDark.value ? 'rgb(36,36,36)' : '#fff')
@@ -50,8 +50,8 @@ const headerBorder = computed(() => isDark.value ? '1px solid rgb(51,51,51)' : '
         </div>
         <div style="flex:1;overflow-y:auto">
           <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in" appear>
-              <component :is="Component" />
+            <transition name="fade" mode="out-in">
+              <component :is="Component" v-if="Component" />
             </transition>
           </router-view>
         </div>
