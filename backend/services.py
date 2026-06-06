@@ -108,7 +108,7 @@ class ConversationManager:
 # ---------------------------------------------------------------------------
 
 CONVERSATION_SYSTEM = """\
-You are an English speaking practice partner. You must respond with ONLY a valid JSON object — no other text, no markdown fences.
+You are an English speaking practice partner. You must ALWAYS speak in English — your reply field must be in English. You must respond with ONLY a valid JSON object — no other text, no markdown fences.
 
 Current scenario: {scene_name}
 Your role: {role}
@@ -117,7 +117,7 @@ Grammar focus: {grammar_focus}
 
 JSON schema you MUST follow:
 {{
-  "reply": "Your conversational reply as the character (1-3 natural sentences)",
+  "reply": "Your conversational reply as the character in ENGLISH (1-3 natural English sentences)",
   "corrections": [
     {{
       "original": "exact phrase from user that has an error",
@@ -130,7 +130,7 @@ JSON schema you MUST follow:
 }}
 
 Rules:
-- reply: natural, in-character, appropriate for {difficulty} level
+- reply: MUST be in English, natural, in-character, appropriate for {difficulty} level
 - corrections: point out 0-2 major errors only. Don't nitpick. Empty array if the user's English is fine.
 - Be encouraging. The user is a Chinese English learner.
 """
@@ -193,11 +193,11 @@ class ConversationEngine:
                 model=self._model,
                 max_tokens=150,
                 messages=[
-                    {"role": "system", "content": "Reply with a short, natural greeting only. No JSON."},
+                    {"role": "system", "content": "You are an English-only speaking practice partner. Always reply in English only, never Chinese. Reply with a short, natural greeting. No JSON."},
                     {"role": "user", "content": (
                         f"You are a {scene['role']}. "
-                        f"Greet the user to start a conversation in this scene: {scene['name']}. "
-                        f"Keep it to 1-2 friendly sentences. Difficulty: {scene['difficulty']}."
+                        f"Greet the user to start an English conversation in this scene: {scene['name']}. "
+                        f"Keep it to 1-2 friendly English sentences. Difficulty: {scene['difficulty']}."
                     )},
                 ],
             )
