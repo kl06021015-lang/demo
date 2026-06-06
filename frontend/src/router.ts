@@ -22,4 +22,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'history',
     component: () => import('./views/History.vue'),
   },
+  {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('./views/Dashboard.vue'),
+  },
 ]

@@ -87,6 +87,20 @@ export interface SummaryData {
   encouragement: string
 }
 
+export interface SceneStats {
+  scene_id: string
+  count: number
+  avg_score: number
+}
+
+export interface DashboardData {
+  total_sessions: number
+  completed_sessions: number
+  total_minutes: number
+  average_score: number
+  scenes_practiced: SceneStats[]
+}
+
 export interface ConversationSummary {
   session_id: string
   duration_minutes: number
@@ -157,6 +171,10 @@ export async function sendMessage(
     throw new Error(`API Error ${resp.status}: ${err}`)
   }
   return resp.json()
+}
+
+export function getDashboard(): Promise<DashboardData> {
+  return request('/dashboard')
 }
 
 export function getConversationList(limit: number = 20): Promise<{ conversations: ConversationListItem[] }> {

@@ -32,6 +32,7 @@ from database import (
     migrate_json_to_sqlite,
     end_conversation as db_end_conversation,
     list_conversations,
+    get_dashboard_stats,
 )
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,12 @@ def list_scenes():
 # ---------------------------------------------------------------------------
 # Routes — Conversations
 # ---------------------------------------------------------------------------
+
+@app.get("/api/dashboard")
+def dashboard():
+    """Return aggregated learning statistics."""
+    return get_dashboard_stats()
+
 
 @app.get("/api/conversations")
 def list_conversation_list(limit: int = 20):
