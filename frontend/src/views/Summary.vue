@@ -48,6 +48,22 @@ function goHome() {
   router.push({ name: 'home' })
 }
 
+async function exportReport() {
+  try {
+    const resp = await fetch(`/api/conversations/${sessionId}/export`)
+    if (!resp.ok) throw new Error('Export failed')
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `english-practice-report-${sessionId}.html`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    // silently fail — the button will just do nothing
+  }
+}
+
 function scoreColor(s: number): string {
   if (s >= 8) return '#18a058'
   if (s >= 6) return '#f0a020'
@@ -136,9 +152,14 @@ function scoreColor(s: number): string {
 
         <!-- Actions -->
         <div style="text-align:center">
-          <NButton type="primary" size="large" @click="goHome">
-            再练一次
-          </NButton>
+          <NSpace justify="center" :size="12">
+            <NButton type="primary" size="large" @click="goHome">
+              再练一次
+            </NButton>
+            <NButton size="large" @click="exportReport">
+              📥 导出报告 (HTML)
+            </NButton>
+          </NSpace>
         </div>
       </template>
     </NSpin>

@@ -17,7 +17,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from services import (
@@ -270,6 +270,115 @@ def end_conversation(session_id: str):
         "total_turns": len([m for m in messages if m.get("user_text")]),
         "summary": summary,
     }
+
+
+@app.get("/api/conversations/{session_id}/export")
+def export_report(session_id: str):
+    """Generate a standalone HTML learning report."""
+    doc = convs.load(session_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if not doc.get("summary"):
+        raise HTTPException(status_code=400, detail="Conversation has no summary yet. End the conversation first.")
+
+    scene = scenes.get_scene(doc["scene_id"])
+    scene_name = scene["name"] if scene else doc["scene_id"]
+    s = doc["summary"]
+
+    score = s.get("overall_score", 0)
+    score_pct = round(score * 10)
+
+    def _sc(c: str) -> str:
+        """Score color helper."""
+        if score >= 8:
+            return "#18a058"
+        if score >= 6:
+            return "#f0a020"
+        return "#d03050"
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>英语练习报告 — {scene_name}</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width:720px; margin:0 auto; padding:32px 16px; color:#333; background:#fff }}
+h1 {{ text-align:center; font-size:22px; margin-bottom:8px; color:#2080f0 }}
+.meta {{ text-align:center; font-size:13px; color:#999; margin-bottom:24px }}
+.score-circle {{ width:140px; height:140px; border-radius:50%; margin:0 auto 24px; display:flex; align-items:center; justify-content:center; flex-direction:column; border:8px solid {_sc(score)}; background:#f9f9f9 }}
+.score-num {{ font-size:40px; font-weight:700; color:{_sc(score)} }}
+.score-label {{ font-size:12px; color:#999; margin-top:4px }}
+.section {{ margin-bottom:20px; padding:16px; border-radius:8px; background:#fafafa; border-left:4px solid #2080f0 }}
+.section h3 {{ font-size:15px; margin-bottom:8px; color:#333 }}
+.section li {{ font-size:13px; line-height:1.7; margin-bottom:4px; color:#555 }}
+.tag {{ display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; margin:2px 4px 2px 0 }}
+.tag-er {{ background:#ffeaea; color:#d03050 }}
+.tag-ok {{ background:#e8f5e9; color:#18a058 }}
+.tag-warn {{ background:#fff3e0; color:#f0a020 }}
+.footer {{ text-align:center; margin-top:32px; padding-top:16px; border-top:1px solid #eee; font-size:12px; color:#ccc }}
+@media print {{ body {{ padding:16px }} .section {{ break-inside:avoid }} }}
+</style>
+</head>
+<body>
+
+<h1>📊 课后总结</h1>
+<div class="meta">
+  场景：{scene_name} &nbsp;|&nbsp;
+  词汇：{len(s.get("vocabulary_used", []))} 个 &nbsp;|&nbsp;
+  对话轮数：{len([m for m in doc.get("messages", []) if m.get("user_text")])}
+</div>
+
+<div class="score-circle">
+  <div class="score-num">{score}</div>
+  <div class="score-label">综合评分</div>
+</div>
+"""
+    # Strengths
+    if s.get("strengths"):
+        html += '<div class="section"><h3>✅ 表现亮点</h3><ul>'
+        for x in s["strengths"]:
+            html += f"<li>{x}</li>"
+        html += '</ul></div>'
+
+    # Grammar
+    if s.get("grammar_highlights"):
+        html += '<div class="section"><h3>📝 语法薄弱点</h3>'
+        for g in s["grammar_highlights"]:
+            html += f'<div style="margin-bottom:8px"><span class="tag tag-er">{g.get("count",0)}次</span> <strong>{g.get("pattern","")}</strong>'
+            html += f'<div style="font-size:12px;color:#888;margin:2px 0">{g.get("suggestion","")}</div>'
+            for ex in g.get("examples", []):
+                html += f'<span class="tag tag-warn">\"{ex}\"</span>'
+            html += '</div>'
+        html += '</div>'
+
+    # Pronunciation
+    if s.get("pronunciation_highlights"):
+        html += '<div class="section"><h3>🔊 发音重点</h3>'
+        for p in s["pronunciation_highlights"]:
+            html += f'<div style="margin-bottom:8px"><strong>音素 {p.get("phoneme","")}</strong> — {p.get("issue","")}'
+            for w in p.get("practice_words", []):
+                html += f'<span class="tag tag-ok">练习：{w}</span>'
+            html += '</div>'
+        html += '</div>'
+
+    # Suggestions
+    if s.get("suggestions"):
+        html += '<div class="section"><h3>💡 改进建议</h3><ul>'
+        for x in s["suggestions"]:
+            html += f"<li>{x}</li>"
+        html += '</ul></div>'
+
+    # Encouragement
+    if s.get("encouragement"):
+        html += f'<div style="text-align:center;padding:20px;background:#f0f9ff;border-radius:8px;font-size:16px;color:#2080f0">{s["encouragement"]}</div>'
+
+    html += '<div class="footer">Generated by AI 英语口语练习 · English Speaking Practice</div></body></html>'
+
+    return HTMLResponse(content=html, headers={
+        "Content-Disposition": f"attachment; filename=english-practice-report-{session_id}.html"
+    })
 
 
 # ---------------------------------------------------------------------------
