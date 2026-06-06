@@ -181,6 +181,43 @@ export function getConversationList(limit: number = 20): Promise<{ conversations
   return request(`/conversations?limit=${limit}`)
 }
 
+export async function* sendMessageStream(
+  sessionId: string,
+  opts: { text?: string; audio?: Blob; filename?: string }
+): AsyncGenerator<{ type: string; content?: string; data?: any }> {
+  const form = new FormData()
+  if (opts.text) form.append('text', opts.text)
+  if (opts.audio) form.append('audio', opts.audio, opts.filename || 'recording.webm')
+
+  const resp = await fetch(`${BASE}/conversations/${sessionId}/message/stream`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!resp.ok) {
+    const err = await resp.text()
+    throw new Error(`API Error ${resp.status}: ${err}`)
+  }
+
+  const reader = resp.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          yield JSON.parse(line.slice(6))
+        } catch { /* skip malformed */ }
+      }
+    }
+  }
+}
+
 export function endConversation(sessionId: string): Promise<ConversationSummary> {
   return request(`/conversations/${sessionId}/end`, { method: 'POST' })
 }

@@ -17,7 +17,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, HTMLResponse
+from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from services import (
@@ -222,6 +222,107 @@ async def send_message(
         response["corrected_text"] = corrected
 
     return response
+
+
+@app.post("/api/conversations/{session_id}/message/stream")
+async def send_message_stream(
+    session_id: str,
+    text: Optional[str] = Form(None),
+    audio: Optional[UploadFile] = File(None),
+):
+    """Stream AI reply via Server-Sent Events."""
+    doc = convs.load(session_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    scene = scenes.get_scene(doc["scene_id"])
+    if scene is None:
+        raise HTTPException(status_code=500, detail="Scene not found")
+
+    # Resolve user text
+    user_text = ""
+    if audio is not None and audio.filename:
+        audio_bytes = await audio.read()
+        user_text = await speech.transcribe(audio_bytes, audio.filename or "audio.webm")
+    elif text:
+        user_text = text.strip()
+    else:
+        raise HTTPException(status_code=400, detail="Provide 'text' or 'audio'")
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="Empty input")
+
+    # Store the user turn AFTER streaming completes — we'll do it via a separate
+    # call from the frontend, or we can store it here. For simplicity, we store
+    # a placeholder turn first (the frontend will patch it or we use the stream).
+    # Actually the frontend will send a follow-up to finalize. But to keep it
+    # simple, we just stream and the frontend saves via the regular endpoint.
+    # We still need to stream corrections though.
+
+    async def event_stream():
+        accumulated_text = ""
+        corrections_data = []
+        async for sse_event in engine.chat_stream(scene, doc.get("messages", []), user_text):
+            # Parse the event to extract the full reply for storage
+            if '"type":"text_delta"' in sse_event:
+                try:
+                    data = json.loads(sse_event.replace("data: ", "", 1))
+                    accumulated_text += data.get("content", "")
+                except json.JSONDecodeError:
+                    pass
+            elif '"type":"corrections"' in sse_event:
+                try:
+                    data = json.loads(sse_event.replace("data: ", "", 1))
+                    corrections_data = data.get("data", [])
+                except json.JSONDecodeError:
+                    pass
+            yield sse_event
+
+        # After stream, compute pronunciation score and store the turn
+        pronunciation_score = None
+        pronunciation_note = ""
+        if audio is not None and audio.filename:
+            corr_count = len(corrections_data)
+            if corr_count == 0:
+                overall = 8.5
+            elif corr_count == 1:
+                overall = 7.0
+            else:
+                overall = max(5.0, 7.5 - corr_count * 1.5)
+            pronunciation_score = {
+                "overall": round(overall, 1),
+                "note": "Good pronunciation!" if overall >= 8 else "Keep practicing!",
+            }
+            pronunciation_note = pronunciation_score["note"]
+
+        turn = len(doc.get("messages", []))
+        convs.append_message(session_id, {
+            "turn": turn,
+            "user_text": user_text,
+            "corrected_text": "",
+            "ai_text": accumulated_text,
+            "corrections": corrections_data,
+            "pronunciation_score": pronunciation_score,
+            "pronunciation_note": pronunciation_note,
+        })
+
+        # Generate and send audio
+        try:
+            mp3_bytes = await speech.synthesize(accumulated_text)
+            audio_b64 = base64.b64encode(mp3_bytes).decode("utf-8")
+            yield f"data: {json.dumps({'type': 'audio', 'data': audio_b64})}\n\n"
+        except Exception:
+            pass
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/conversations/{session_id}/end")

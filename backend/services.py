@@ -239,6 +239,51 @@ class ConversationEngine:
             "pronunciation_note": "",
         }
 
+    async def chat_stream(self, scene: dict, history: list[dict], user_text: str):
+        """
+        Async generator that yields SSE-formatted strings for streaming AI replies.
+        Yields: text_delta events, then corrections event, then done event.
+        """
+        if not self._api_key:
+            # Fallback: emit the fallback text as one chunk
+            fb = self._fallback_chat(scene, user_text)
+            yield f"data: {json.dumps({'type': 'text_delta', 'content': fb['reply']})}\n\n"
+            yield f"data: {json.dumps({'type': 'corrections', 'data': fb['corrections']})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+
+        try:
+            system = CONVERSATION_SYSTEM.format(
+                scene_name=scene["name"],
+                role=scene["role"],
+                difficulty=scene.get("difficulty", "beginner"),
+                grammar_focus=", ".join(scene.get("grammar_focus", [])),
+            )
+            messages = self._build_history(history, user_text)
+
+            full_text = ""
+            with self.client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=400,
+                system=system,
+                messages=messages,
+            ) as stream:
+                for text in stream.text_stream:
+                    full_text += text
+                    yield f"data: {json.dumps({'type': 'text_delta', 'content': text})}\n\n"
+
+            # Parse the accumulated text for corrections
+            parsed = self._parse_json(full_text)
+            corrections = parsed.get("corrections", [])
+            yield f"data: {json.dumps({'type': 'corrections', 'data': corrections})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception:
+            fb = self._fallback_chat(scene, user_text)
+            yield f"data: {json.dumps({'type': 'text_delta', 'content': fb['reply']})}\n\n"
+            yield f"data: {json.dumps({'type': 'corrections', 'data': fb['corrections']})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
     def summarize(self, scene: dict, messages: list[dict]) -> dict:
         """Generate a summary report for the completed conversation."""
         if not self._api_key:
