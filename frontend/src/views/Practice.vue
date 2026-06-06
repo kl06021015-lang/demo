@@ -47,6 +47,7 @@ const avatarMap: Record<string, string> = {
   'shopping': '🛍️',
   'doctor-visit': '👨‍⚕️',
   'job-interview': '💼',
+  'academic-discussion': '👨‍🏫',
 }
 const sceneAvatar = computed(() => avatarMap[sceneId] || '🤖')
 
@@ -161,6 +162,7 @@ function getDefaultSuggestions(): string[] {
     'shopping': ['How much is this?', 'Do you have a larger size?', 'Can I try it on?'],
     'doctor-visit': ['I have a headache', 'How should I take this medicine?', 'I feel better now'],
     'job-interview': ['I have experience in...', 'What does this role involve?', 'Thank you for your time'],
+    'academic-discussion': ['In my opinion...', 'The evidence suggests that...', 'Could you elaborate on that?'],
   }
   return defaults[sceneId] || ['Tell me more', 'Can you repeat that?', 'I understand']
 }
