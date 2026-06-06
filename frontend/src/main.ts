@@ -13,3 +13,10 @@ const app = createApp(App)
 app.use(naive)
 app.use(router)
 app.mount('#app')
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
