@@ -275,10 +275,6 @@ npm run dev
 english-practice/
 ├── README.md
 ├── .gitignore
-├── 作品提交规范.md
-├── 改进与优化.md
-├── ui_及改进建议.md
-├── 语音录音持久化需求分析与实现方案.md
 ├── backend/
 │   ├── .env.example
 │   ├── requirements.txt
