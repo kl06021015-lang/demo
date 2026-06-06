@@ -225,3 +225,43 @@ export function endConversation(sessionId: string): Promise<ConversationSummary>
 export function deleteConversation(sessionId: string): Promise<{ ok: boolean }> {
   return request(`/conversations/${sessionId}`, { method: 'DELETE' })
 }
+
+// ---------------------------------------------------------------------------
+// Vocabulary
+// ---------------------------------------------------------------------------
+
+export interface VocabWord {
+  id: number
+  word: string
+  meaning: string
+  context: string
+  added_at: string
+  mastered: number
+}
+
+export interface VocabStats {
+  total: number
+  mastered: number
+  learning: number
+}
+
+export function getVocabulary(limit = 100, mastered?: boolean): Promise<{ words: VocabWord[]; stats: VocabStats }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (mastered !== undefined) params.set('mastered', String(mastered))
+  return request(`/vocabulary?${params}`)
+}
+
+export function addVocabulary(word: string, meaning?: string, context?: string): Promise<VocabWord> {
+  return request('/vocabulary', {
+    method: 'POST',
+    body: JSON.stringify({ word, meaning, context }),
+  })
+}
+
+export function toggleWordMastered(wordId: number): Promise<VocabWord> {
+  return request(`/vocabulary/${wordId}/toggle`, { method: 'POST' })
+}
+
+export function deleteVocabulary(wordId: number): Promise<{ ok: boolean }> {
+  return request(`/vocabulary/${wordId}`, { method: 'DELETE' })
+}

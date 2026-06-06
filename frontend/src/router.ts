@@ -27,4 +27,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'dashboard',
     component: () => import('./views/Dashboard.vue'),
   },
+  {
+    path: '/vocabulary',
+    name: 'vocabulary',
+    component: () => import('./views/Vocabulary.vue'),
+  },
 ]

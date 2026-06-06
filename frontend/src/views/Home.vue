@@ -111,6 +111,13 @@ function difficultyLabel(d: string) {
       </NGrid>
 
       <NEmpty v-if="!loading && !scenes.length && !error" description="暂无可用的练习场景" />
+
+      <!-- Quick links -->
+      <div style="display:flex;gap:12px;margin-top:32px;flex-wrap:wrap;justify-content:center">
+        <NButton @click="router.push({name:'history'})">📋 练习记录</NButton>
+        <NButton @click="router.push({name:'dashboard'})">📊 学习数据</NButton>
+        <NButton @click="router.push({name:'vocabulary'})">📖 生词本</NButton>
+      </div>
     </NSpin>
   </div>
 </template>
