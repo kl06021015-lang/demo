@@ -10,6 +10,7 @@ export interface Scene {
   description: string
   difficulty: string
   icon: string
+  avatar: string
   suggested_vocabulary: string[]
   grammar_focus: string[]
 }
@@ -87,6 +88,12 @@ export interface SummaryData {
   encouragement: string
 }
 
+export interface DailyScore {
+  date: string
+  avg_score: number
+  sessions: number
+}
+
 export interface SceneStats {
   scene_id: string
   count: number
@@ -105,6 +112,10 @@ export interface DashboardData {
   weekly_minutes: number
   goal: Goal | null
   weekly_goal: Goal | null
+  daily_scores: DailyScore[]
+  xp: number
+  level: number
+  xp_for_next: number
 }
 
 export interface StreakData {

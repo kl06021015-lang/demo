@@ -283,6 +283,21 @@ def get_dashboard_stats() -> dict:
     turn_count = conn.execute("SELECT COUNT(*) FROM turns WHERE user_text != ''").fetchone()[0]
     total_minutes = round(turn_count * 0.5, 1)
 
+    # Daily scores for trend chart (last 30 days)
+    daily_score_rows = conn.execute(
+        """
+        SELECT date(ended_at) as day,
+               AVG(CAST(json_extract(summary_json, '$.overall_score') AS REAL)) as avg_score,
+               COUNT(*) as sessions
+        FROM conversations
+        WHERE ended_at IS NOT NULL
+          AND summary_json IS NOT NULL
+          AND ended_at >= date('now', '-30 days')
+        GROUP BY day
+        ORDER BY day
+        """
+    ).fetchall()
+
     conn.close()
 
     # Streak and check-in data
@@ -315,6 +330,26 @@ def get_dashboard_stats() -> dict:
     goal = get_active_goal("daily")
     weekly_goal = get_active_goal("weekly")
 
+    daily_scores = [
+        {"date": r["day"], "avg_score": round(r["avg_score"] or 0, 1), "sessions": r["sessions"]}
+        for r in daily_score_rows
+    ]
+
+    # XP & Level calculation
+    # XP = total_minutes * 10 + bonus for high-score sessions
+    high_score_count = 0
+    for r in score_rows:
+        try:
+            s = json.loads(r["summary_json"])
+            if s.get("overall_score", 0) >= 7:
+                high_score_count += 1
+        except (json.JSONDecodeError, KeyError):
+            pass
+    xp = int(total_minutes * 10 + high_score_count * 20)
+    import math
+    level = int(math.sqrt(xp / 100)) + 1
+    xp_for_next = (level) ** 2 * 100  # XP needed for next level
+
     return {
         "total_sessions": total,
         "completed_sessions": completed,
@@ -327,6 +362,10 @@ def get_dashboard_stats() -> dict:
         "weekly_minutes": total_checkin_minutes,
         "goal": goal,
         "weekly_goal": weekly_goal,
+        "daily_scores": daily_scores,
+        "xp": xp,
+        "level": level,
+        "xp_for_next": xp_for_next,
     }
 
 

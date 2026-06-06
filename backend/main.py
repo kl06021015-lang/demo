@@ -543,7 +543,7 @@ def create_or_update_goal(payload: dict):
 
 
 @app.post("/api/checkins")
-def create_checkin(payload: dict | None = None):
+def create_checkin(payload: Optional[dict] = None):
     """Record a manual check-in for today (upserts)."""
     minutes = (payload or {}).get("minutes_practiced", 0)
     turns = (payload or {}).get("turns_completed", 0)

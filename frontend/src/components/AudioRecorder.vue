@@ -112,14 +112,14 @@ function stopRecording() {
     >
       <template #icon><AudioOutlined v-if="!isRecording" /><PauseOutlined v-else /></template>
     </NButton>
-    <span v-if="!isSupported" style="font-size:12px;color:#999">麦克风不可用</span>
-    <span v-if="isRecording" style="font-size:12px;color:#d03050;min-width:36px">{{ recordingTime }}s</span>
+    <span v-if="!isSupported" style="font-size:var(--font-size-caption);color:var(--color-text-tertiary)">麦克风不可用</span>
+    <span v-if="isRecording" style="font-size:var(--font-size-caption);color:var(--color-error);min-width:36px">{{ recordingTime }}s</span>
   </div>
 </template>
 
 <style scoped>
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(208,48,80,0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(208,48,80,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88,204,2,0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(88,204,2,0); }
 }
 </style>

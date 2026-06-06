@@ -6,9 +6,12 @@ import {
   NModal, NInputNumber, NSelect, useMessage, NPopover
 } from 'naive-ui'
 import {
-  getDashboard, getScenes, setGoal, createCheckin, getGoals,
-  type DashboardData, type Scene, type Goal,
+  getDashboard, getScenes, setGoal, createCheckin, getGoals, getCheckins,
+  type DashboardData, type Scene, type Goal, type CheckinRecord,
 } from '../api'
+import HeatmapChart from '../components/dashboard/HeatmapChart.vue'
+import ScoreTrendChart from '../components/dashboard/ScoreTrendChart.vue'
+import FlameAnimation from '../components/animations/FlameAnimation.vue'
 
 const router = useRouter()
 const msg = useMessage()
@@ -16,6 +19,7 @@ const msg = useMessage()
 const loading = ref(true)
 const data = ref<DashboardData | null>(null)
 const sceneMap = ref<Record<string, string>>({})
+const yearCheckins = ref<CheckinRecord[]>([])
 
 // Goal editing modal
 const showGoalModal = ref(false)
@@ -25,8 +29,9 @@ const savingGoal = ref(false)
 
 onMounted(async () => {
   try {
-    const [dash, scenes] = await Promise.all([getDashboard(), getScenes()])
+    const [dash, scenes, cks] = await Promise.all([getDashboard(), getScenes(), getCheckins(365)])
     data.value = dash
+    yearCheckins.value = cks.checkins
     for (const s of scenes.scenes) {
       sceneMap.value[s.id] = s.name
     }
@@ -42,9 +47,9 @@ function sceneName(id: string): string {
 }
 
 function scoreColor(s: number): string {
-  if (s >= 8) return '#18a058'
-  if (s >= 6) return '#f0a020'
-  return '#d03050'
+  if (s >= 8) return 'var(--color-success)'
+  if (s >= 6) return 'var(--color-warning)'
+  return 'var(--color-error)'
 }
 
 const hasData = computed(() => data.value && data.value.total_sessions > 0)
@@ -94,6 +99,19 @@ const weekDays = computed(() => {
 // Streak
 const streak = computed(() => data.value?.streak ?? { current_streak: 0, longest_streak: 0, total_checkins: 0 })
 
+// XP & Level
+const xp = computed(() => data.value?.xp ?? 0)
+const level = computed(() => data.value?.level ?? 1)
+const xpForNext = computed(() => data.value?.xp_for_next ?? 100)
+const xpProgress = computed(() => {
+  if (!data.value) return 0
+  const prevLevel = Math.max(1, data.value.level - 1)
+  const prevXp = prevLevel ** 2 * 100
+  const currentXp = data.value.xp
+  const needed = data.value.xp_for_next - prevXp
+  return Math.min(100, Math.round(((currentXp - prevXp) / needed) * 100))
+})
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
@@ -138,8 +156,8 @@ function formatDateShort(iso: string): string {
 </script>
 
 <template>
-  <div style="max-width:900px;margin:0 auto;padding:32px 16px">
-    <h2 style="margin-bottom:24px">📊 学习报告</h2>
+  <div style="max-width:var(--max-width-content);margin:0 auto;padding:var(--spacing-xl) var(--spacing-md)">
+    <h2 style="margin-bottom:var(--spacing-lg);font-size:var(--font-size-heading)">📊 学习报告</h2>
 
     <NSpin :show="loading">
       <NEmpty v-if="!loading && !hasData" description="还没有学习数据，快去开始练习吧！">
@@ -166,15 +184,15 @@ function formatDateShort(iso: string): string {
                 <NProgress
                   type="circle"
                   :percentage="dailyProgress"
-                  :color="dailyProgress >= 100 ? '#18a058' : '#2080f0'"
+                  :color="dailyProgress >= 100 ? 'var(--color-success)' : 'var(--color-primary)'"
                   :stroke-width="8"
                   :width="80"
                 />
-                <div style="margin-top:8px;font-size:13px;color:#666">
+                <div style="margin-top:8px;font-size:var(--font-size-small);color:var(--color-text-secondary)">
                   目标 {{ dailyGoal.target_minutes }} 分钟/天
                 </div>
               </template>
-              <div v-else style="padding:16px 0;color:#999;font-size:13px">
+              <div v-else style="padding:16px 0;color:var(--color-text-tertiary);font-size:var(--font-size-small)">
                 尚未设置每日目标
               </div>
             </NCard>
@@ -193,37 +211,79 @@ function formatDateShort(iso: string): string {
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
                   <NProgress
                     :percentage="weeklyProgress"
-                    :color="weeklyProgress >= 100 ? '#18a058' : '#f0a020'"
+                    :color="weeklyProgress >= 100 ? 'var(--color-success)' : 'var(--color-warning)'"
                     :height="12"
                     :border-radius="6"
                     style="flex:1"
                   />
-                  <span style="font-size:12px;color:#999;white-space:nowrap">{{ weeklyMinutes }}/{{ weeklyGoal.target_minutes }} 分钟</span>
+                  <span style="font-size:var(--font-size-caption);color:var(--color-text-tertiary);white-space:nowrap">{{ weeklyMinutes }}/{{ weeklyGoal.target_minutes }} 分钟</span>
                 </div>
               </template>
-              <div v-else style="margin-bottom:8px;font-size:13px;color:#999">
+              <div v-else style="margin-bottom:8px;font-size:var(--font-size-small);color:var(--color-text-tertiary)">
                 尚未设置每周目标
               </div>
               <!-- Streak -->
-              <div style="display:flex;gap:16px;margin-top:8px;font-size:13px">
+              <div style="display:flex;gap:16px;margin-top:8px;font-size:var(--font-size-small)">
                 <div>
-                  <span style="color:#999">当前连续：</span>
-                  <strong :style="{color: streak.current_streak >= 3 ? '#18a058' : '#f0a020'}">
-                    🔥 {{ streak.current_streak }} 天
+                  <span style="color:var(--color-text-tertiary)">当前连续：</span>
+                  <FlameAnimation :streak="streak.current_streak" :animate="true" />
+                  <strong :style="{color: streak.current_streak >= 3 ? 'var(--color-success)' : 'var(--color-warning)'}">
+                    {{ streak.current_streak }} 天
                   </strong>
                 </div>
                 <div>
-                  <span style="color:#999">最长：</span>
+                  <span style="color:var(--color-text-tertiary)">最长：</span>
                   <strong>⭐ {{ streak.longest_streak }} 天</strong>
                 </div>
                 <div>
-                  <span style="color:#999">总打卡：</span>
+                  <span style="color:var(--color-text-tertiary)">总打卡：</span>
                   <strong>{{ streak.total_checkins }} 次</strong>
                 </div>
               </div>
             </NCard>
           </NGridItem>
         </NGrid>
+
+        <!-- XP / Level Card -->
+        <NCard size="small" style="text-align:center;margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:var(--font-size-caption);color:var(--color-text-tertiary);margin-bottom:4px">
+                当前等级
+              </div>
+              <div style="font-size:36px;font-weight:700;color:var(--color-accent)">
+                {{ level }}
+              </div>
+            </div>
+            <div style="flex:1;min-width:200px;max-width:400px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:var(--font-size-caption);color:var(--color-text-secondary)">
+                  ⚡ {{ xp }} XP
+                </span>
+                <span style="font-size:var(--font-size-caption);color:var(--color-text-tertiary)">
+                  升级还需 {{ xpForNext - xp }} XP
+                </span>
+              </div>
+              <NProgress
+                :percentage="xpProgress"
+                :height="10"
+                :border-radius="5"
+                color="var(--color-accent)"
+                :show-indicator="false"
+              />
+            </div>
+          </div>
+        </NCard>
+
+        <!-- Learning Heatmap -->
+        <NCard v-if="yearCheckins.length" size="small" title="📊 学习热力图" style="margin-bottom:16px">
+          <HeatmapChart :checkins="yearCheckins" />
+        </NCard>
+
+        <!-- Score Trend Chart -->
+        <NCard v-if="data.daily_scores?.length" size="small" title="📈 评分趋势（30天）" style="margin-bottom:16px">
+          <ScoreTrendChart :scores="data.daily_scores" />
+        </NCard>
 
         <!-- Weekly Checkin Calendar -->
         <NCard size="small" title="📅 本周打卡" style="margin-bottom:16px">
@@ -233,19 +293,19 @@ function formatDateShort(iso: string): string {
               :key="day.date"
               style="width:80px;text-align:center"
             >
-              <div style="font-size:11px;color:#999;margin-bottom:4px">{{ day.label }}</div>
+              <div style="font-size:var(--font-size-caption);color:var(--color-text-tertiary);margin-bottom:4px">{{ day.label }}</div>
               <div
                 :style="{
                   width:'48px', height:'48px', borderRadius:'50%', margin:'0 auto',
                   display:'flex', alignItems:'center', justifyContent:'center',
                   fontSize:'20px',
-                  background: day.checked ? (day.minutes >= (dailyGoal?.target_minutes ?? 10) ? '#e8f5e9' : '#fff3e0') : '#f5f5f5',
-                  border: day.checked ? '2px solid ' + (day.minutes >= (dailyGoal?.target_minutes ?? 10) ? '#18a058' : '#f0a020') : '2px solid #eee',
+                  background: day.checked ? (day.minutes >= (dailyGoal?.target_minutes ?? 10) ? 'var(--color-success-light)' : 'var(--color-warning-light)') : 'var(--color-bg-input)',
+                  border: day.checked ? '2px solid ' + (day.minutes >= (dailyGoal?.target_minutes ?? 10) ? 'var(--color-success)' : 'var(--color-warning)') : '2px solid var(--color-border)',
                 }"
               >
                 {{ day.checked ? (day.minutes >= (dailyGoal?.target_minutes ?? 10) ? '✅' : '🟡') : '·' }}
               </div>
-              <div v-if="day.checked" style="font-size:10px;color:#666;margin-top:2px">
+              <div v-if="day.checked" style="font-size:var(--font-size-caption);color:var(--color-text-secondary);margin-top:2px">
                 {{ day.minutes }} 分钟
               </div>
             </div>
@@ -260,7 +320,7 @@ function formatDateShort(iso: string): string {
           <NSpace :size="8" wrap>
             <NPopover v-for="b in data.badges" :key="b.id" trigger="hover">
               <template #trigger>
-                <NTag size="medium" round :bordered="false" style="cursor:pointer;padding:4px 12px;font-size:14px">
+                <NTag size="medium" round :bordered="false" style="cursor:pointer;padding:4px 12px;font-size:var(--font-size-small)">
                   {{ b.icon }} {{ b.name }}
                 </NTag>
               </template>
@@ -273,26 +333,26 @@ function formatDateShort(iso: string): string {
         <NGrid v-if="hasData" :cols="4" :x-gap="16" :y-gap="16" responsive="screen" style="margin-bottom:16px">
           <NGridItem>
             <NCard size="small" style="text-align:center">
-              <div style="font-size:28px;font-weight:700;color:#2080f0">{{ data.total_sessions }}</div>
-              <div style="font-size:13px;color:#999">总练习次数</div>
+              <div style="font-size:28px;font-weight:700;color:var(--color-primary)">{{ data.total_sessions }}</div>
+              <div style="font-size:var(--font-size-small);color:var(--color-text-tertiary)">总练习次数</div>
             </NCard>
           </NGridItem>
           <NGridItem>
             <NCard size="small" style="text-align:center">
-              <div style="font-size:28px;font-weight:700;color:#18a058">{{ data.total_minutes }}</div>
-              <div style="font-size:13px;color:#999">练习时长 (分钟)</div>
+              <div style="font-size:28px;font-weight:700;color:var(--color-success)">{{ data.total_minutes }}</div>
+              <div style="font-size:var(--font-size-small);color:var(--color-text-tertiary)">练习时长 (分钟)</div>
             </NCard>
           </NGridItem>
           <NGridItem>
             <NCard size="small" style="text-align:center">
               <div style="font-size:28px;font-weight:700" :style="{color: scoreColor(data.average_score)}">{{ data.average_score }}</div>
-              <div style="font-size:13px;color:#999">平均评分</div>
+              <div style="font-size:var(--font-size-small);color:var(--color-text-tertiary)">平均评分</div>
             </NCard>
           </NGridItem>
           <NGridItem>
             <NCard size="small" style="text-align:center">
-              <div style="font-size:28px;font-weight:700;color:#f0a020">{{ completionRate }}%</div>
-              <div style="font-size:13px;color:#999">完成率</div>
+              <div style="font-size:28px;font-weight:700;color:var(--color-accent)">{{ completionRate }}%</div>
+              <div style="font-size:var(--font-size-small);color:var(--color-text-tertiary)">完成率</div>
             </NCard>
           </NGridItem>
         </NGrid>
@@ -320,8 +380,8 @@ function formatDateShort(iso: string): string {
         </NCard>
 
         <!-- Summary -->
-        <NCard style="text-align:center;background:#f0f9ff">
-          <div style="font-size:15px;line-height:1.8;color:#2080f0">
+        <NCard style="text-align:center;background:var(--color-bg-encourage)">
+          <div style="font-size:var(--font-size-body);line-height:var(--line-height);color:var(--color-primary)">
             {{ streak.current_streak >= 7
                 ? `🔥 连续打卡 ${streak.current_streak} 天！你太棒了！累计 ${data.total_minutes} 分钟练习。继续加油！`
                 : data.completed_sessions > 0
@@ -339,7 +399,7 @@ function formatDateShort(iso: string): string {
     <NModal v-model:show="showGoalModal" title="设定学习目标">
       <NCard style="width:400px" title="设定学习目标" :bordered="false" size="small">
         <div style="margin-bottom:16px">
-          <div style="font-size:13px;color:#666;margin-bottom:4px">目标类型</div>
+          <div style="font-size:var(--font-size-small);color:var(--color-text-secondary);margin-bottom:4px">目标类型</div>
           <NSelect
             v-model:value="editingGoalType"
             :options="[
@@ -349,7 +409,7 @@ function formatDateShort(iso: string): string {
           />
         </div>
         <div style="margin-bottom:16px">
-          <div style="font-size:13px;color:#666;margin-bottom:4px">
+          <div style="font-size:var(--font-size-small);color:var(--color-text-secondary);margin-bottom:4px">
             目标时长（分钟）
           </div>
           <NInputNumber
@@ -360,7 +420,7 @@ function formatDateShort(iso: string): string {
             style="width:100%"
           />
         </div>
-        <div style="font-size:13px;color:#999;margin-bottom:16px">
+        <div style="font-size:var(--font-size-small);color:var(--color-text-tertiary);margin-bottom:16px">
           {{ editingGoalType === 'daily'
               ? `每天练习 ${editingTargetMinutes} 分钟`
               : `每周练习 ${editingTargetMinutes} 分钟`

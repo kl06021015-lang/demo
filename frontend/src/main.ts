@@ -3,6 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import naive from 'naive-ui'
 import App from './App.vue'
 import { routes } from './router'
+import './styles/theme.css'
 
 const router = createRouter({
   history: createWebHashHistory(),
