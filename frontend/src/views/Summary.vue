@@ -15,6 +15,10 @@ const summary = ref<ConversationSummary | null>(null)
 onMounted(async () => {
   try {
     const conv = await getConversation(sessionId)
+    // Compute average speaking rate from turns with WPM data
+    const wpms = (conv as any).messages?.filter((m: any) => m.speaking_wpm > 0).map((m: any) => m.speaking_wpm) || []
+    if (wpms.length) avgWpm.value = Math.round(wpms.reduce((a: number, b: number) => a + b, 0) / wpms.length)
+
     if (conv.ended_at) {
       // Already ended — use existing summary from the stored conversation
       const msgs = conv.messages.filter((m: any) => m.user_text)
@@ -44,7 +48,7 @@ onMounted(async () => {
   }
 })
 
-function goHome() {
+const avgWpm = ref(0)
   router.push({ name: 'home' })
 }
 
@@ -81,9 +85,10 @@ function scoreColor(s: number): string {
         <NCard style="text-align:center;margin-bottom:24px">
           <h2 style="margin-bottom:16px">📊 课后总结</h2>
           <div style="font-size:14px;color:#666;margin-bottom:8px">
-            场景：{{ summary.summary.vocabulary_used?.length || 0 }} 个词汇 ·
+            {{ summary.summary.vocabulary_used?.length || 0 }} 个词汇 ·
             {{ summary.total_turns }} 轮对话 ·
             {{ summary.duration_minutes }} 分钟
+            <span v-if="avgWpm"> · 🗣️ 平均语速 {{ avgWpm }} WPM</span>
           </div>
           <div style="margin:16px auto;text-align:center">
             <div
