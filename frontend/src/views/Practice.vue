@@ -315,16 +315,18 @@ function scrollToBottom() {
 
     <!-- Messages -->
     <div ref="chatContainer" style="flex:1;overflow-y:auto;padding:16px">
-      <template v-for="m in messages" :key="m.id">
-        <ChatBubble
-          :role="m.role"
-          :text="m.text"
-          :corrected-text="m.correctedText"
-          :corrections="m.corrections"
-          :pronunciation-score="m.pronunciationScore"
-          :audio-base64="m.audioBase64"
-        />
-      </template>
+      <TransitionGroup name="msg" tag="div">
+        <div v-for="m in messages" :key="m.id" style="margin-bottom:8px">
+          <ChatBubble
+            :role="m.role"
+            :text="m.text"
+            :corrected-text="m.correctedText"
+            :corrections="m.corrections"
+            :pronunciation-score="m.pronunciationScore"
+            :audio-base64="m.audioBase64"
+          />
+        </div>
+      </TransitionGroup>
 
       <!-- Loading indicator -->
       <div v-if="loading" style="text-align:center;padding:16px">
@@ -362,3 +364,13 @@ function scrollToBottom() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.msg-enter-active {
+  transition: all 0.3s ease;
+}
+.msg-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+</style>
