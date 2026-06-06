@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NButton, NTag, NSpin, NProgress, NAlert, NSpace, NDivider } from 'naive-ui'
+import { NCard, NButton, NTag, NSpin, NAlert, NSpace, NDivider } from 'naive-ui'
 import { endConversation, getConversation, type ConversationSummary, type SummaryData } from '../api'
 
 const route = useRoute()
@@ -85,19 +85,20 @@ function scoreColor(s: number): string {
             {{ summary.total_turns }} 轮对话 ·
             {{ summary.duration_minutes }} 分钟
           </div>
-          <div style="position:relative;width:160px;height:160px;margin:16px auto">
-            <NProgress
-              type="circle"
-              :percentage="Math.round(summary.summary.overall_score * 10)"
-              :color="scoreColor(summary.summary.overall_score)"
-              :stroke-width="12"
-              :height="160"
-            />
-            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
-              <div style="font-size:36px;font-weight:700" :style="{color:scoreColor(summary.summary.overall_score)}">
-                {{ summary.summary.overall_score.toFixed(1) }}
+          <div style="margin:16px auto;text-align:center">
+            <div
+              style="display:inline-flex;align-items:center;justify-content:center;
+              width:120px;height:120px;border-radius:50%;
+              border:6px solid currentColor;
+              background:#f9f9f9"
+              :style="{ color: scoreColor(summary.summary.overall_score) }"
+            >
+              <div>
+                <div style="font-size:36px;font-weight:700" :style="{color:scoreColor(summary.summary.overall_score)}">
+                  {{ summary.summary.overall_score.toFixed(1) }}
+                </div>
+                <div style="font-size:12px;color:#999;margin-top:2px">综合评分</div>
               </div>
-              <div style="font-size:12px;color:#999">综合评分</div>
             </div>
           </div>
         </NCard>
