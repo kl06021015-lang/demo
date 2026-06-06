@@ -241,6 +241,7 @@ async def send_message(
         "ai_reply": {"text": ai_text, "audio_base64": audio_base64},
         "corrections": corrections,
         "pronunciation_score": pronunciation_score,
+        "audio_url": f"/api/audio/{session_id}/{audio_path}" if audio_path else None,
     }
 
     # Fill corrected_text from corrections
@@ -346,6 +347,10 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'audio', 'data': audio_b64})}\n\n"
         except Exception:
             pass
+
+        # Notify frontend of the persisted audio_url
+        if audio_path:
+            yield f"data: {json.dumps({'type': 'audio_url', 'data': f'/api/audio/{session_id}/{audio_path}'})}\n\n"
 
     return StreamingResponse(
         event_stream(),

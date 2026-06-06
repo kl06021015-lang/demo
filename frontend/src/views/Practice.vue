@@ -229,6 +229,11 @@ async function handleSendText(textToSend?: string) {
             corrections: event.data,
           }
         }
+      } else if (event.type === 'audio_url' && event.data) {
+        const uIdx = messages.value.findIndex(m => m.id === userMsg.id)
+        if (uIdx >= 0) {
+          messages.value[uIdx] = { ...messages.value[uIdx], audioUrl: event.data }
+        }
       } else if (event.type === 'audio' && event.data) {
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) {
@@ -280,8 +285,17 @@ async function handleSendAudio(audioBlob: Blob) {
             correctedText: lastTurn.corrected_text || undefined,
             corrections: lastTurn.corrections || event.data,
             pronunciationScore: lastTurn.pronunciation_score,
+            audioUrl: (lastTurn as any).audio_url || undefined,
             timestamp: now, prevTimestamp: now,
           })
+        }
+      } else if (event.type === 'audio_url' && event.data) {
+        // Find the most recent user message (spliced in above) and set audio_url
+        for (let i = messages.value.length - 1; i >= 0; i--) {
+          if (messages.value[i].role === 'user') {
+            messages.value[i] = { ...messages.value[i], audioUrl: event.data }
+            break
+          }
         }
       } else if (event.type === 'audio' && event.data) {
         const idx = messages.value.findIndex(m => m.id === aiId)
@@ -294,7 +308,15 @@ async function handleSendAudio(audioBlob: Blob) {
     messages.value = messages.value.filter(m => m.id !== aiId)
     try {
       const resp = await sendMessage(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })
-      messages.value.push({ id: `u${Date.now()}`, role: 'user', text: resp.user_text, correctedText: resp.corrected_text || undefined, corrections: resp.corrections, pronunciationScore: resp.pronunciation_score, timestamp: now, prevTimestamp: now })
+      messages.value.push({
+        id: `u${Date.now()}`, role: 'user',
+        text: resp.user_text,
+        correctedText: resp.corrected_text || undefined,
+        corrections: resp.corrections,
+        pronunciationScore: resp.pronunciation_score,
+        audioUrl: (resp as any).audio_url || undefined,
+        timestamp: now, prevTimestamp: now,
+      })
       processResponse(resp)
     } catch (e2: any) {
       error.value = e2.message || 'Send failed'
