@@ -22,7 +22,7 @@ onMounted(async () => {
         session_id: conv.session_id,
         duration_minutes: msgs.length * 0.5,
         total_turns: msgs.length,
-        summary: conv.summary || {
+        summary: conv.summary?.overall_score != null ? conv.summary : {
           overall_score: 0,
           grammar_highlights: [],
           pronunciation_highlights: [],
@@ -91,11 +91,11 @@ function scoreColor(s: number): string {
               width:120px;height:120px;border-radius:50%;
               border:6px solid currentColor;
               background:#f9f9f9"
-              :style="{ color: scoreColor(summary.summary.overall_score) }"
+              :style="{ color: scoreColor(summary.summary.overall_score ?? 0) }"
             >
               <div>
-                <div style="font-size:36px;font-weight:700" :style="{color:scoreColor(summary.summary.overall_score)}">
-                  {{ summary.summary.overall_score.toFixed(1) }}
+                <div style="font-size:36px;font-weight:700" :style="{color:scoreColor(summary.summary.overall_score ?? 0)}">
+                  {{ (summary.summary.overall_score ?? 0).toFixed(1) }}
                 </div>
                 <div style="font-size:12px;color:#999;margin-top:2px">综合评分</div>
               </div>
