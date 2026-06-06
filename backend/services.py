@@ -1,7 +1,7 @@
 """
 Business logic for the English speaking practice app.
 - SceneManager: scene loading
-- ConversationManager: conversation persistence
+- ConversationManager: conversation persistence (SQLite via database.py)
 - ConversationEngine: Claude API for dialogue + corrections + scoring
 - SpeechService: Whisper STT + Edge-TTS
 """
@@ -18,26 +18,22 @@ from typing import Optional
 import anthropic
 from openai import OpenAI
 
+from database import (
+    create_conversation as db_create_conversation,
+    get_conversation as db_get_conversation,
+    append_turn as db_append_turn,
+    end_conversation as db_end_conversation,
+)
+
 # ---------------------------------------------------------------------------
 # Data directory helpers
 # ---------------------------------------------------------------------------
 
 DATA_DIR = Path(__file__).parent / "data"
-CONV_DIR = DATA_DIR / "conversations"
 
 
 def _scene_path() -> Path:
     return DATA_DIR / "scenes.json"
-
-
-def _conv_path(session_id: str) -> Path:
-    return CONV_DIR / f"{session_id}.json"
-
-
-def _conv_audio_dir(session_id: str) -> Path:
-    d = CONV_DIR / session_id
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -86,46 +82,26 @@ class SceneManager:
 # ---------------------------------------------------------------------------
 
 class ConversationManager:
-    """Persist conversation records as JSON files."""
+    """Persist conversation records via SQLite database."""
 
     def create(self, scene_id: str) -> dict:
         session_id = uuid.uuid4().hex[:12]
-        doc = {
-            "session_id": session_id,
-            "scene_id": scene_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "ended_at": None,
-            "messages": [],
-        }
-        self._save(session_id, doc)
-        return doc
+        return db_create_conversation(session_id, scene_id)
 
     def load(self, session_id: str) -> Optional[dict]:
-        path = _conv_path(session_id)
-        if not path.exists():
-            return None
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return db_get_conversation(session_id)
 
     def append_message(self, session_id: str, turn_data: dict) -> None:
         doc = self.load(session_id)
         if doc is None:
             raise FileNotFoundError(f"Conversation {session_id} not found")
-        doc["messages"].append(turn_data)
-        self._save(session_id, doc)
+        db_append_turn(session_id, turn_data)
 
     def end(self, session_id: str) -> dict:
         doc = self.load(session_id)
         if doc is None:
             raise FileNotFoundError(f"Conversation {session_id} not found")
-        doc["ended_at"] = datetime.now(timezone.utc).isoformat()
-        self._save(session_id, doc)
-        return doc
-
-    def _save(self, session_id: str, doc: dict) -> None:
-        CONV_DIR.mkdir(parents=True, exist_ok=True)
-        with open(_conv_path(session_id), "w", encoding="utf-8") as f:
-            json.dump(doc, f, ensure_ascii=False, indent=2)
+        return doc  # caller is responsible for passing summary to db_end_conversation
 
 
 # ---------------------------------------------------------------------------

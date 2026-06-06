@@ -11,6 +11,8 @@ dist/
 
 # Runtime data
 backend/data/conversations/
+backend/data/conversations_backup/
+backend/data/english_practice.db
 
 # IDE
 .vscode/

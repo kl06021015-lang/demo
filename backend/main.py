@@ -26,8 +26,8 @@ from services import (
     ConversationEngine,
     SpeechService,
     DATA_DIR,
-    CONV_DIR,
 )
+from database import init_db, migrate_json_to_sqlite, end_conversation as db_end_conversation
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -48,9 +48,12 @@ convs = ConversationManager()
 engine = ConversationEngine()
 speech = SpeechService()
 
-# Ensure data directories exist
+# Ensure data directory exists and database is initialized
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-CONV_DIR.mkdir(parents=True, exist_ok=True)
+init_db()
+migrated = migrate_json_to_sqlite()
+if migrated:
+    print(f"[startup] Migrated {migrated} JSON conversations to SQLite")
 
 # ---------------------------------------------------------------------------
 # Routes — Scenes
@@ -236,8 +239,7 @@ def end_conversation(session_id: str):
         }
 
     # Mark ended and persist summary
-    doc["summary"] = summary
-    doc = convs.end(session_id)
+    doc = db_end_conversation(session_id, summary)
 
     return {
         "session_id": session_id,
