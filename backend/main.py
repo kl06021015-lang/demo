@@ -269,17 +269,15 @@ async def send_message_stream(
         accumulated_text = ""
         corrections_data = []
         async for sse_event in engine.chat_stream(scene, doc.get("messages", []), user_text):
-            # Parse the event to extract the full reply for storage
-            if '"type":"text_delta"' in sse_event:
+            # Parse the SSE event to extract data for DB storage
+            if sse_event.startswith("data: "):
                 try:
-                    data = json.loads(sse_event.replace("data: ", "", 1))
-                    accumulated_text += data.get("content", "")
-                except json.JSONDecodeError:
-                    pass
-            elif '"type":"corrections"' in sse_event:
-                try:
-                    data = json.loads(sse_event.replace("data: ", "", 1))
-                    corrections_data = data.get("data", [])
+                    data = json.loads(sse_event[6:].strip())  # strip "data: " prefix
+                    etype = data.get("type", "")
+                    if etype == "text_delta":
+                        accumulated_text += data.get("content", "")
+                    elif etype == "corrections":
+                        corrections_data = data.get("data", [])
                 except json.JSONDecodeError:
                     pass
             yield sse_event

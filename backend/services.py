@@ -269,6 +269,7 @@ class ConversationEngine:
             )
             messages = self._build_messages(system, history, user_text)
 
+            # Accumulate full response from DeepSeek
             full_text = ""
             stream = self.client.chat.completions.create(
                 model=self._model,
@@ -280,10 +281,18 @@ class ConversationEngine:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     full_text += delta.content
-                    yield f"data: {json.dumps({'type': 'text_delta', 'content': delta.content})}\n\n"
 
+            # Parse JSON to extract clean reply text
             parsed = self._parse_json(full_text)
+            reply = parsed.get("reply", full_text)
             corrections = parsed.get("corrections", [])
+
+            # Stream the clean reply word-by-word for natural feel
+            words = reply.split(" ")
+            for i, word in enumerate(words):
+                content = word if i == 0 else f" {word}"
+                yield f"data: {json.dumps({'type': 'text_delta', 'content': content})}\n\n"
+
             yield f"data: {json.dumps({'type': 'corrections', 'data': corrections})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
@@ -367,90 +376,144 @@ class ConversationEngine:
 
 
 # ---------------------------------------------------------------------------
-# SpeechService  (讯飞 HTTP REST STT + Edge-TTS)
+# SpeechService  (讯飞 WebSocket STT + Edge-TTS)
 # ---------------------------------------------------------------------------
 
-import hashlib
+import hmac
 import time as _time_module
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 
 class SpeechService:
-    """Speech-to-text via iFlytek HTTP REST API; text-to-speech via Edge-TTS."""
+    """Speech-to-text via iFlytek WebSocket API; text-to-speech via Edge-TTS."""
 
-    IAT_URL = "https://api.xfyun.cn/v1/service/v1/iat"
+    IAT_HOST = "iat-api.xfyun.cn"
+    IAT_PATH = "/v2/iat"
 
     def __init__(self) -> None:
         self._app_id = os.getenv("XFYUN_APP_ID", "")
         self._api_key = os.getenv("XFYUN_API_KEY", "")
+        self._api_secret = os.getenv("XFYUN_API_SECRET", "")
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._app_id and self._api_key)
+        return bool(self._app_id and self._api_key and self._api_secret)
+
+    def _build_ws_url(self) -> str:
+        """Build authenticated WebSocket URL with HMAC-SHA256 signature."""
+        now = _time_module.strftime("%a, %d %b %Y %H:%M:%S GMT", _time_module.gmtime())
+        sign_origin = f"host: {self.IAT_HOST}\ndate: {now}\nGET {self.IAT_PATH} HTTP/1.1"
+        signature_sha = hmac.new(
+            self._api_secret.encode(),
+            sign_origin.encode(),
+            "sha256",
+        ).digest()
+        signature = base64.b64encode(signature_sha).decode()
+        auth_origin = (
+            f'api_key="{self._api_key}", algorithm="hmac-sha256", '
+            f'headers="host date request-line", signature="{signature}"'
+        )
+        authorization = base64.b64encode(auth_origin.encode()).decode()
+        params = urlencode({
+            "host": self.IAT_HOST,
+            "date": now,
+            "authorization": authorization,
+        })
+        return f"wss://{self.IAT_HOST}{self.IAT_PATH}?{params}"
 
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
-        """Transcribe WAV audio to text using iFlytek HTTP REST API."""
+        """Transcribe WAV audio to text using iFlytek WebSocket API."""
         if not self.is_configured:
-            raise RuntimeError("讯飞语音识别未配置。请在 .env 中设置 XFYUN_APP_ID, XFYUN_API_KEY。")
+            raise RuntimeError(
+                "讯飞语音识别未配置。请在 .env 中设置 XFYUN_APP_ID, XFYUN_API_KEY, XFYUN_API_SECRET。"
+            )
 
-        # Extract PCM from WAV
+        # Extract PCM from WAV (skip 44-byte RIFF header)
         pcm = audio_bytes
         if len(audio_bytes) > 44 and audio_bytes[:4] == b"RIFF":
             pcm = audio_bytes[44:]
 
-        # Build auth
-        cur_time = str(int(_time_module.time()))
-        param_raw = json.dumps({
-            "engine_type": "iat",
-            "aue": "raw",
-            "language": "en_us",
-            "accent": "mandarin",
-        })
-        param_b64 = base64.b64encode(param_raw.encode()).decode()
-        checksum = hashlib.md5((self._api_key + cur_time + param_b64).encode()).hexdigest()
+        if len(pcm) == 0:
+            return "[No speech detected]"
 
-        headers = {
-            "X-Appid": self._app_id,
-            "X-CurTime": cur_time,
-            "X-Param": param_b64,
-            "X-CheckSum": checksum,
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
+        # Build WebSocket URL with fresh signature
+        ws_url = self._build_ws_url()
 
-        audio_b64 = base64.b64encode(pcm).decode()
-        body = "audio=" + quote(audio_b64, safe='')
-
-        # HTTP POST (sync in a thread to not block event loop)
-        import concurrent.futures
-
-        def _post():
-            import urllib.request
-            req = urllib.request.Request(self.IAT_URL, data=body.encode(), headers=headers, method="POST")
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    return json.loads(resp.read().decode())
-            except urllib.error.HTTPError as e:
-                err_body = e.read().decode()
-                raise RuntimeError(f"讯飞HTTP {e.code}: {err_body[:200]}")
-
-        loop = None
         try:
-            loop = __import__('asyncio').get_running_loop()
+            import websockets
+
+            collected: list[str] = []
+
+            async with websockets.connect(
+                ws_url,
+                ping_interval=10,
+                close_timeout=5,
+                open_timeout=15,
+            ) as ws:
+                # Send start frame with audio data
+                # iFlytek status: 0=first, 1=continue, 2=last
+                audio_b64 = base64.b64encode(pcm).decode()
+                start_frame = json.dumps({
+                    "common": {"app_id": self._app_id},
+                    "business": {
+                        "language": "en_us",
+                        "domain": "iat",
+                        "accent": "mandarin",
+                        "dwa": "wpgs",
+                        "ptt": 0,
+                    },
+                    "data": {
+                        "status": 0,
+                        "format": "audio/L16;rate=16000",
+                        "encoding": "raw",
+                        "audio": audio_b64,
+                    },
+                })
+                await ws.send(start_frame)
+
+                # Send end frame
+                end_frame = json.dumps({
+                    "data": {
+                        "status": 2,
+                        "format": "audio/L16;rate=16000",
+                        "encoding": "raw",
+                        "audio": "",
+                    },
+                })
+                await ws.send(end_frame)
+
+                # Collect results
+                while True:
+                    msg = await ws.recv()
+                    data = json.loads(msg)
+
+                    code = data.get("code", -1)
+                    if code != 0:
+                        err_msg = data.get("message", data.get("desc", "unknown"))
+                        raise RuntimeError(f"讯飞识别失败 (code={code}): {err_msg}")
+
+                    # Extract recognized text from result
+                    result = data.get("data", {}).get("result", {})
+                    if result:
+                        for ws_item in result.get("ws", []):
+                            for cw in ws_item.get("cw", []):
+                                w = cw.get("w", "")
+                                if w:
+                                    collected.append(w)
+
+                    # Check if stream is complete
+                    if data.get("data", {}).get("status") == 2:
+                        break
+
+            text = "".join(collected).strip()
+            return text if text else "[No speech detected]"
+
+        except ImportError:
+            raise RuntimeError("websockets 库未安装，请执行: pip install websockets")
         except RuntimeError:
-            pass
-
-        if loop:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                result = await loop.run_in_executor(pool, _post)
-        else:
-            result = _post()
-
-        code = result.get("code", -1)
-        if code != 0:
-            raise RuntimeError(f"讯飞识别失败 (code={code}): {result.get('desc', 'unknown')}")
-
-        text = result.get("data", "")
-        return text.strip() if text.strip() else "[No speech detected]"
+            raise
+        except Exception as e:
+            raise RuntimeError(f"讯飞语音识别连接失败: {e}")
 
     async def synthesize(self, text: str, voice: str = "en-US-JennyNeural") -> bytes:
         """Convert text to speech MP3 bytes using Edge-TTS."""
