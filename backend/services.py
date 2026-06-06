@@ -252,7 +252,12 @@ class ConversationEngine:
     # ------------------------------------------------------------------
 
     async def chat_stream(self, scene: dict, history: list[dict], user_text: str):
-        """Async generator yielding SSE events for streaming AI replies."""
+        """Async generator yielding SSE events — true token-level streaming.
+
+        Tokens from DeepSeek are forwarded in real-time. The 'reply' field is
+        extracted incrementally from the streaming JSON so the user sees a
+        typewriter effect instead of waiting for the full response.
+        """
         if not self._api_key:
             fb = self._fallback_chat(scene, user_text)
             yield f"data: {json.dumps({'type': 'text_delta', 'content': fb['reply']})}\n\n"
@@ -269,29 +274,33 @@ class ConversationEngine:
             )
             messages = self._build_messages(system, history, user_text)
 
-            # Accumulate full response from DeepSeek
-            full_text = ""
             stream = self.client.chat.completions.create(
                 model=self._model,
                 max_tokens=400,
                 messages=messages,
                 stream=True,
             )
+
+            full_text = ""       # accumulated raw JSON from DeepSeek
+            last_reply = ""      # what we've already streamed to the frontend
+
             for chunk in stream:
                 delta = chunk.choices[0].delta
-                if delta.content:
-                    full_text += delta.content
+                if not delta.content:
+                    continue
 
-            # Parse JSON to extract clean reply text
+                full_text += delta.content
+
+                # Try to extract the partial reply from the incomplete JSON
+                current_reply = self._extract_reply_partial(full_text)
+                if current_reply and len(current_reply) > len(last_reply):
+                    new_chars = current_reply[len(last_reply):]
+                    last_reply = current_reply
+                    yield f"data: {json.dumps({'type': 'text_delta', 'content': new_chars})}\n\n"
+
+            # Parse the completed JSON for corrections
             parsed = self._parse_json(full_text)
-            reply = parsed.get("reply", full_text)
             corrections = parsed.get("corrections", [])
-
-            # Stream the clean reply word-by-word for natural feel
-            words = reply.split(" ")
-            for i, word in enumerate(words):
-                content = word if i == 0 else f" {word}"
-                yield f"data: {json.dumps({'type': 'text_delta', 'content': content})}\n\n"
 
             yield f"data: {json.dumps({'type': 'corrections', 'data': corrections})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -373,6 +382,44 @@ class ConversationEngine:
                 "corrections": [],
                 "pronunciation_note": "",
             }
+
+    @staticmethod
+    def _extract_reply_partial(text: str) -> str:
+        """Extract the 'reply' field value from a potentially incomplete JSON string.
+
+        Handles the streaming case: as tokens arrive, the JSON is incomplete
+        (e.g. ``{"reply": "Hello``). This extracts whatever has been received
+        so far, correctly handling JSON escape sequences."""
+        import re
+        match = re.search(r'"reply"\s*:\s*"', text)
+        if not match:
+            return ""
+
+        result: list[str] = []
+        i = match.end()
+        while i < len(text):
+            if text[i] == '\\' and i + 1 < len(text):
+                next_char = text[i + 1]
+                if next_char == '"':
+                    result.append('"')
+                elif next_char == '\\':
+                    result.append('\\')
+                elif next_char == 'n':
+                    result.append('\n')
+                elif next_char == 't':
+                    result.append('\t')
+                elif next_char == 'r':
+                    result.append('\r')
+                else:
+                    result.append(text[i:i + 2])
+                i += 2
+            elif text[i] == '"':
+                # Closing quote — reply field is complete
+                break
+            else:
+                result.append(text[i])
+                i += 1
+        return ''.join(result)
 
 
 # ---------------------------------------------------------------------------
