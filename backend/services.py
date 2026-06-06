@@ -530,3 +530,231 @@ class SpeechService:
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# PronunciationService  — 发音练习评分
+# ---------------------------------------------------------------------------
+
+# Preset phoneme-targeted exercise sentences for Chinese learners
+PHONEME_EXERCISES: list[dict] = [
+    {
+        "phoneme": "/θ/ (voiceless th)",
+        "title": "清辅音 /θ/ 练习",
+        "description": "舌尖轻触上齿，气流从缝隙挤出，声带不振动。常见错误：用 /s/ 替代。",
+        "sentences": [
+            {"text": "I think three thousand thoughts.", "difficulty": "easy"},
+            {"text": "Thank you for the thoughtful gift.", "difficulty": "easy"},
+            {"text": "The theory that thirty-three thieves thought through things thoroughly.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/ð/ (voiced th)",
+        "title": "浊辅音 /ð/ 练习",
+        "description": "舌尖轻触上齿，气流挤出，声带振动。常见错误：用 /d/ 或 /z/ 替代。",
+        "sentences": [
+            {"text": "This is the other brother.", "difficulty": "easy"},
+            {"text": "They gathered together in the weather.", "difficulty": "medium"},
+            {"text": "Though they'd rather bother their father and mother together.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/r/",
+        "title": "辅音 /r/ 练习",
+        "description": "舌尖卷起但不触碰上颚，嘴唇微微圆起。中文母语者常与 /l/ 混淆。",
+        "sentences": [
+            {"text": "The red rabbit runs around the room.", "difficulty": "easy"},
+            {"text": "Really rich rivers run rapidly.", "difficulty": "medium"},
+            {"text": "The rural ruler rarely remembers to read the regular report.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/l/",
+        "title": "辅音 /l/ 练习",
+        "description": "舌尖顶住上齿龈，气流从舌两侧通过。注意与 /r/ 和 /n/ 的区分。",
+        "sentences": [
+            {"text": "The little lady likes lemonade.", "difficulty": "easy"},
+            {"text": "Lily lost her lovely little lunch.", "difficulty": "medium"},
+            {"text": "The loyal lawyer lightly lifted the legal letter.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/v/ vs /w/",
+        "title": "/v/ 与 /w/ 区分练习",
+        "description": "/v/ 上齿触下唇，/w/ 双唇圆起。中文母语者常混淆两者。",
+        "sentences": [
+            {"text": "We went very far west.", "difficulty": "easy"},
+            {"text": "The violent wind waved the vines wildly.", "difficulty": "medium"},
+            {"text": "When we visited Venice, we viewed various wonderful villas.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/æ/ (short a)",
+        "title": "短元音 /æ/ 练习",
+        "description": "嘴巴张大，舌头压低。中文母语者常发成 /e/ 或 /a:/。",
+        "sentences": [
+            {"text": "The cat sat on the mat.", "difficulty": "easy"},
+            {"text": "Dad had a bad sandwich for a snack.", "difficulty": "medium"},
+        ],
+    },
+    {
+        "phoneme": "/ɪ/ vs /iː/",
+        "title": "短元音 /ɪ/ 与长元音 /iː/ 练习",
+        "description": "/ɪ/ 短促放松，/iː/ 拉长且紧张。注意 sit/seat、ship/sheep 的区分。",
+        "sentences": [
+            {"text": "Sit in the seat and eat a bit of meat.", "difficulty": "medium"},
+            {"text": "This ship is filled with cheap sheep.", "difficulty": "medium"},
+            {"text": "He still feels the thrill of the film.", "difficulty": "hard"},
+        ],
+    },
+    {
+        "phoneme": "/ŋ/ (ng)",
+        "title": "鼻音 /ŋ/ 练习",
+        "description": "舌后部抬起抵住软腭。注意不要在后面加 /g/ 音。",
+        "sentences": [
+            {"text": "I'm singing a long song.", "difficulty": "easy"},
+            {"text": "The young king is going swimming.", "difficulty": "medium"},
+        ],
+    },
+]
+
+FREE_PRACTICE_SENTENCES: list[dict] = [
+    {"text": "Hello, how are you doing today?", "difficulty": "easy"},
+    {"text": "I would like a cup of coffee please.", "difficulty": "easy"},
+    {"text": "Could you tell me how to get to the nearest station?", "difficulty": "medium"},
+    {"text": "The weather has been absolutely wonderful this week.", "difficulty": "medium"},
+    {"text": "I've been thinking about learning a new language recently.", "difficulty": "medium"},
+    {"text": "The restaurant down the street serves the most delicious Italian food.", "difficulty": "hard"},
+    {"text": "Despite the challenging circumstances, we managed to accomplish our goals.", "difficulty": "hard"},
+]
+
+
+class PronunciationService:
+    """Pronunciation assessment using iFlytek STT + text comparison."""
+
+    def __init__(self, speech_service: SpeechService):
+        self._speech = speech_service
+
+    def exercises(self, phoneme: str = "") -> list[dict]:
+        """Return phoneme-targeted exercise sentences."""
+        if phoneme:
+            for group in PHONEME_EXERCISES:
+                if group["phoneme"] == phoneme:
+                    return [group]
+            for group in PHONEME_EXERCISES:
+                if group["phoneme"].startswith(phoneme):
+                    return [group]
+            return []
+        return PHONEME_EXERCISES
+
+    def free_practice_sentences(self) -> list[dict]:
+        """Return general practice sentences for free-mode practice."""
+        return FREE_PRACTICE_SENTENCES
+
+    async def score(self, audio_bytes: bytes, target_text: str) -> dict:
+        """
+        Transcribe the user's audio via iFlytek and compare with target text.
+
+        Returns:
+            {
+              "overall_score": 8.5,      # 1-10
+              "accuracy": 0.85,          # 0-1
+              "transcription": "...",
+              "word_scores": [{word, score, match}],
+              "target_text": "...",
+            }
+        """
+        # 1. Transcribe audio
+        transcription = await self._speech.transcribe(audio_bytes)
+
+        # 2. Normalize and compare
+        target_norm = self._normalize(target_text)
+        trans_norm = self._normalize(transcription)
+
+        target_words = target_norm.split()
+        trans_words = trans_norm.split()
+
+        # 3. Word-level comparison using edit distance alignment
+        word_scores, matched_count = self._align_words(target_words, trans_words)
+
+        # 4. Calculate metrics
+        total = len(target_words)
+        accuracy = matched_count / total if total > 0 else 0
+
+        # Overall score: 1-10 scale, heavily weighted by accuracy
+        overall_score = round(1.0 + accuracy * 9.0, 1)
+
+        # Bonus: penalize if transcription is very short (no speech)
+        if len(trans_words) == 0:
+            overall_score = 1.0
+
+        return {
+            "overall_score": overall_score,
+            "accuracy": round(accuracy, 3),
+            "transcription": transcription,
+            "word_scores": word_scores,
+            "target_text": target_text,
+        }
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        """Normalize text for comparison: lowercase, strip punctuation."""
+        import re
+        text = text.lower().strip()
+        text = re.sub(r"[^\w\s]", "", text)
+        return text
+
+    @staticmethod
+    def _align_words(target: list[str], trans: list[str]) -> tuple[list[dict], int]:
+        """
+        Align target words with transcribed words using a simple greedy approach.
+        Returns (word_scores, matched_count).
+        """
+        word_scores: list[dict] = []
+        t_idx = 0
+        matched = 0
+
+        for tw in target:
+            if t_idx < len(trans) and tw == trans[t_idx]:
+                word_scores.append({"word": tw, "score": 1.0, "match": True})
+                matched += 1
+                t_idx += 1
+            elif t_idx < len(trans):
+                # Check if this trans word matches the NEXT target word
+                if t_idx + 1 < len(trans) and t_idx + 1 < len(target) and trans[t_idx + 1] == tw:
+                    # Extra word inserted by user
+                    word_scores.append({"word": trans[t_idx], "score": 0.0, "match": False})
+                    t_idx += 1
+                    word_scores.append({"word": tw, "score": 1.0, "match": True})
+                    matched += 1
+                    t_idx += 1
+                else:
+                    # Substitution or deletion
+                    word_scores.append({
+                        "word": tw,
+                        "score": PronunciationService._word_similarity(tw, trans[t_idx]),
+                        "match": False,
+                    })
+                    t_idx += 1
+            else:
+                word_scores.append({"word": tw, "score": 0.0, "match": False})
+
+        # Add any remaining transcribed words as insertions
+        while t_idx < len(trans):
+            word_scores.append({"word": trans[t_idx], "score": 0.0, "match": False})
+            t_idx += 1
+
+        return word_scores, matched
+
+    @staticmethod
+    def _word_similarity(a: str, b: str) -> float:
+        """Simple character-level similarity between two words (0-1)."""
+        if a == b:
+            return 1.0
+        # Levenshtein ratio
+        if not a or not b:
+            return 0.0
+        len_a, len_b = len(a), len(b)
+        # Simple matching characters ratio
+        matches = sum(1 for ca, cb in zip(a, b) if ca == cb)
+        return round(matches / max(len_a, len_b), 2)
