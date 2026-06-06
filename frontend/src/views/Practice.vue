@@ -3,7 +3,7 @@ import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton, NInput, NSpace, NSpin, NTag, NAlert, NPopconfirm,
-  NDivider, useMessage
+  NDivider, NDrawer, NDrawerContent, useMessage
 } from 'naive-ui'
 import { SendOutlined, ArrowLeftOutlined, CheckCircleOutlined } from '@vicons/antd'
 import {
@@ -31,6 +31,26 @@ const textInput = ref('')
 const loading = ref(false)
 const error = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+const grammarPanelVisible = ref(false)
+
+// Aggregate corrections from all messages into type-grouped grammar notes
+const grammarNotes = computed(() => {
+  const allCorrections: (Correction & { turn: number; userText: string })[] = []
+  messages.value.forEach((m, idx) => {
+    if (m.corrections?.length) {
+      m.corrections.forEach(c => {
+        allCorrections.push({ ...c, turn: idx, userText: m.text })
+      })
+    }
+  })
+  const groups: Record<string, typeof allCorrections> = {}
+  allCorrections.forEach(c => {
+    const type = c.type || 'other'
+    if (!groups[type]) groups[type] = []
+    groups[type].push(c)
+  })
+  return { total: allCorrections.length, groups }
+})
 
 // --- Types ---
 interface MessageItem {
@@ -260,6 +280,14 @@ async function handleEnd() {
   router.push({ name: 'summary', params: { sessionId: sessionId.value } })
 }
 
+function typeLabel(type: string): string {
+  const map: Record<string, string> = {
+    grammar: '🔴 语法错误', word_choice: '🟡 用词建议',
+    politeness: '🔵 礼貌表达', other: '⚪ 其他'
+  }
+  return map[type] || type
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (chatContainer.value) {
@@ -280,15 +308,38 @@ function scrollToBottom() {
         </NButton>
         <span style="font-weight:600">{{ sceneName || '对话练习' }}</span>
       </NSpace>
-      <NPopconfirm @positive-click="handleEnd">
-        <template #trigger>
-          <NButton size="small" type="warning" :disabled="!messages.length">
-            <template #icon><CheckCircleOutlined /></template>
-            结束对话
-          </NButton>
-        </template>
-        确定要结束本次练习吗？结束后可在总结页查看报告。
-      </NPopconfirm>
+      <NSpace :size="8">
+        <NButton size="small" @click="grammarPanelVisible = !grammarPanelVisible" :type="grammarPanelVisible ? 'info' : 'default'">
+          📝 语法笔记
+          <span v-if="grammarNotes.total" style="margin-left:4px;opacity:0.7;font-size:11px">({{ grammarNotes.total }})</span>
+        </NButton>
+        <NPopconfirm @positive-click="handleEnd">
+          <template #trigger>
+            <NButton size="small" type="warning" :disabled="!messages.length">
+              <template #icon><CheckCircleOutlined /></template>
+              结束对话
+            </NButton>
+          </template>
+          确定要结束本次练习吗？结束后可在总结页查看报告。
+        </NPopconfirm>
+      </NSpace>
+    </div>
+
+    <!-- Grammar Notes Panel -->
+    <div v-if="grammarPanelVisible" style="padding:12px 16px;background:#fffbe6;border-bottom:1px solid #ffe58f;max-height:40vh;overflow-y:auto">
+      <div v-if="grammarNotes.total === 0" style="text-align:center;color:#999;padding:16px">
+        暂无语法记录。继续对话，AI 会帮你记录需要改进的地方。
+      </div>
+      <div v-else v-for="(items, type) in grammarNotes.groups" :key="type" style="margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">{{ typeLabel(type) }} ({{ items.length }})</div>
+        <div v-for="(c, ci) in items" :key="ci"
+             style="padding:6px 10px;margin-bottom:4px;background:#fff;border-radius:6px;font-size:12px;line-height:1.6">
+          <span style="text-decoration:line-through;color:#d03050">{{ c.original }}</span>
+          <span style="color:#333"> → </span>
+          <span style="color:#18a058;font-weight:500">{{ c.corrected }}</span>
+          <div style="color:#888;margin-top:2px">{{ c.explanation }}</div>
+        </div>
+      </div>
     </div>
 
     <!-- Error -->
