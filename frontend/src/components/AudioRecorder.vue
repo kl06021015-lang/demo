@@ -4,91 +4,95 @@ import { NButton, NIcon } from 'naive-ui'
 import { AudioOutlined, PauseOutlined } from '@vicons/antd'
 
 const props = defineProps<{ disabled?: boolean }>()
-const emit = defineEmits<{ 'text-ready': [text: string] }>()
+const emit = defineEmits<{ 'audio-ready': [blob: Blob] }>()
+
+const SAMPLE_RATE = 16000
 
 const isRecording = ref(false)
 const isSupported = ref(true)
 const recordingTime = ref(0)
 
-let recognition: any = null
+let stream: MediaStream | null = null
+let audioContext: AudioContext | null = null
+let scriptNode: ScriptProcessorNode | null = null
+let sourceNode: MediaStreamAudioSourceNode | null = null
+let samples: Float32Array[] = []
 let recordTimer: number | null = null
 let timeTimer: number | null = null
-
-// Check SpeechRecognition support
-const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-if (!SpeechRecognitionAPI) {
-  isSupported.value = false
-}
 
 function cleanup() {
   if (recordTimer) { clearTimeout(recordTimer); recordTimer = null }
   if (timeTimer) { clearInterval(timeTimer); timeTimer = null }
-  if (recognition) {
-    try { recognition.stop() } catch {}
-    recognition = null
-  }
-  isRecording.value = false
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null }
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null }
+  if (audioContext && audioContext.state !== 'closed') { audioContext.close(); audioContext = null }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+  samples = []
 }
 
 onBeforeUnmount(cleanup)
 
-function startRecording() {
-  if (props.disabled || isRecording.value || !isSupported.value) return
+function encodeWav(sampleArrays: Float32Array[]): Blob {
+  const totalLen = sampleArrays.reduce((sum, a) => sum + a.length, 0)
+  const buffer = new ArrayBuffer(44 + totalLen * 2)
+  const view = new DataView(buffer)
+
+  const ws = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)) }
+
+  ws(0, 'RIFF'); view.setUint32(4, 36 + totalLen * 2, true); ws(8, 'WAVE')
+  ws(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true); view.setUint32(24, SAMPLE_RATE, true)
+  view.setUint32(28, SAMPLE_RATE * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+  ws(36, 'data'); view.setUint32(40, totalLen * 2, true)
+
+  let off = 44
+  for (const arr of sampleArrays) {
+    for (let i = 0; i < arr.length; i++) {
+      const s = Math.max(-1, Math.min(1, arr[i]))
+      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+      off += 2
+    }
+  }
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+async function startRecording() {
+  if (props.disabled || isRecording.value) return
+  samples = []; recordingTime.value = 0
 
   try {
-    recognition = new SpeechRecognitionAPI()
-    recognition.lang = 'en-US'
-    recognition.interimResults = false
-    recognition.continuous = false
-    recognition.maxAlternatives = 1
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: SAMPLE_RATE, channelCount: 1 } })
+    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+    sourceNode = audioContext.createMediaStreamSource(stream)
 
-    recognition.onresult = (event: any) => {
-      const text = event.results[0][0].transcript?.trim()
-      if (text) {
-        emit('text-ready', text)
-      }
+    scriptNode = audioContext.createScriptProcessor(4096, 1, 1)
+    scriptNode.onaudioprocess = (event) => {
+      samples.push(new Float32Array(event.inputBuffer.getChannelData(0)))
     }
-
-    recognition.onerror = (event: any) => {
-      // 'no-speech' is not really an error — user just didn't speak
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        console.error('Speech recognition error:', event.error)
-      }
-      cleanup()
-    }
-
-    recognition.onend = () => {
-      cleanup()
-    }
-
-    recognition.start()
+    sourceNode.connect(scriptNode); scriptNode.connect(audioContext.destination)
     isRecording.value = true
-    recordingTime.value = 0
 
-    timeTimer = window.setInterval(() => {
-      recordingTime.value++
-    }, 1000)
-
-    // Auto-stop after 30 seconds
-    recordTimer = window.setTimeout(() => {
-      stopRecording()
-    }, 30000)
+    timeTimer = window.setInterval(() => { recordingTime.value++ }, 1000)
+    recordTimer = window.setTimeout(() => { stopRecording() }, 30000)
   } catch (e) {
     isSupported.value = false
-    console.error('Speech recognition failed:', e)
   }
 }
 
 function stopRecording() {
   if (!isRecording.value) return
+  isRecording.value = false
   if (recordTimer) { clearTimeout(recordTimer); recordTimer = null }
   if (timeTimer) { clearInterval(timeTimer); timeTimer = null }
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null }
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null }
+  if (audioContext && audioContext.state !== 'closed') { audioContext.close(); audioContext = null }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
 
-  if (recognition) {
-    try { recognition.stop() } catch {}
-    recognition = null
+  if (samples.length > 0) {
+    emit('audio-ready', encodeWav(samples))
   }
-  isRecording.value = false
+  samples = []
 }
 </script>
 
@@ -98,8 +102,7 @@ function stopRecording() {
       v-if="isSupported"
       :type="isRecording ? 'error' : 'default'"
       :disabled="disabled"
-      circle
-      size="large"
+      circle size="large"
       @mousedown.prevent="startRecording"
       @mouseup.prevent="stopRecording"
       @mouseleave="isRecording ? stopRecording() : undefined"
@@ -107,17 +110,10 @@ function stopRecording() {
       @touchend.prevent="stopRecording"
       :style="isRecording ? 'animation:pulse 1s infinite' : ''"
     >
-      <template #icon>
-        <AudioOutlined v-if="!isRecording" />
-        <PauseOutlined v-else />
-      </template>
+      <template #icon><AudioOutlined v-if="!isRecording" /><PauseOutlined v-else /></template>
     </NButton>
-    <span v-if="!isSupported" style="font-size:12px;color:#999" title="浏览器不支持语音识别，请使用Chrome或Edge">
-      麦克风不可用
-    </span>
-    <span v-if="isRecording" style="font-size:12px;color:#d03050;min-width:36px">
-      {{ recordingTime }}s
-    </span>
+    <span v-if="!isSupported" style="font-size:12px;color:#999">麦克风不可用</span>
+    <span v-if="isRecording" style="font-size:12px;color:#d03050;min-width:36px">{{ recordingTime }}s</span>
   </div>
 </template>
 

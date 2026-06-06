@@ -367,144 +367,90 @@ class ConversationEngine:
 
 
 # ---------------------------------------------------------------------------
-# SpeechService  (讯飞 STT + Edge-TTS)
+# SpeechService  (讯飞 HTTP REST STT + Edge-TTS)
 # ---------------------------------------------------------------------------
 
 import hashlib
-import hmac
-from datetime import datetime, timezone as dt_timezone
-from urllib.parse import urlencode
-import websockets
+import time as _time_module
+from urllib.parse import quote
 
 
 class SpeechService:
-    """Speech-to-text via iFlytek WebSocket API; text-to-speech via Edge-TTS."""
+    """Speech-to-text via iFlytek HTTP REST API; text-to-speech via Edge-TTS."""
 
-    IAT_HOST = "iat-api.xfyun.cn"
-    IAT_PATH = "/v2/iat"
-    IAT_URL = f"wss://{IAT_HOST}{IAT_PATH}"
+    IAT_URL = "https://api.xfyun.cn/v1/service/v1/iat"
 
     def __init__(self) -> None:
         self._app_id = os.getenv("XFYUN_APP_ID", "")
         self._api_key = os.getenv("XFYUN_API_KEY", "")
-        self._api_secret = os.getenv("XFYUN_API_SECRET", "")
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._app_id and self._api_key and self._api_secret)
-
-    def _build_auth_url(self) -> str:
-        """Build the authenticated WebSocket URL with HMAC-SHA256 signature."""
-        now = datetime.now(dt_timezone.utc)
-        date_str = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
-
-        signature_origin = f"host: {self.IAT_HOST}\ndate: {date_str}\nGET {self.IAT_PATH} HTTP/1.1"
-        signature = base64.b64encode(
-            hmac.new(
-                self._api_secret.encode("utf-8"),
-                signature_origin.encode("utf-8"),
-                hashlib.sha256,
-            ).digest()
-        ).decode("utf-8")
-
-        authorization = base64.b64encode(
-            f"api_key=\"{self._api_key}\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\"{signature}\"".encode(
-                "utf-8"
-            )
-        ).decode("utf-8")
-
-        params = urlencode({
-            "host": self.IAT_HOST,
-            "date": date_str,
-            "authorization": authorization,
-        })
-        return f"{self.IAT_URL}?{params}"
+        return bool(self._app_id and self._api_key)
 
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
-        """Transcribe WAV audio to text using iFlytek WebSocket API."""
+        """Transcribe WAV audio to text using iFlytek HTTP REST API."""
         if not self.is_configured:
-            raise RuntimeError(
-                "讯飞语音识别未配置。请在 .env 中设置 XFYUN_APP_ID, XFYUN_API_KEY, XFYUN_API_SECRET。"
-            )
+            raise RuntimeError("讯飞语音识别未配置。请在 .env 中设置 XFYUN_APP_ID, XFYUN_API_KEY。")
 
-        # Skip WAV header (44 bytes) — send raw PCM to iFlytek
-        # But first check if it's a valid WAV file
-        pcm_data = audio_bytes
+        # Extract PCM from WAV
+        pcm = audio_bytes
         if len(audio_bytes) > 44 and audio_bytes[:4] == b"RIFF":
-            # Find the data chunk
-            data_offset = 44  # default
-            # Actually, just skip the header. The WAV data starts at byte 44 for standard PCM WAV.
-            pcm_data = audio_bytes[44:]
+            pcm = audio_bytes[44:]
 
-        url = self._build_auth_url()
+        # Build auth
+        cur_time = str(int(_time_module.time()))
+        param_raw = json.dumps({
+            "engine_type": "iat",
+            "aue": "raw",
+            "language": "en_us",
+            "accent": "mandarin",
+        })
+        param_b64 = base64.b64encode(param_raw.encode()).decode()
+        checksum = hashlib.md5((self._api_key + cur_time + param_b64).encode()).hexdigest()
 
+        headers = {
+            "X-Appid": self._app_id,
+            "X-CurTime": cur_time,
+            "X-Param": param_b64,
+            "X-CheckSum": checksum,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        audio_b64 = base64.b64encode(pcm).decode()
+        body = "audio=" + quote(audio_b64, safe='')
+
+        # HTTP POST (sync in a thread to not block event loop)
+        import concurrent.futures
+
+        def _post():
+            import urllib.request
+            req = urllib.request.Request(self.IAT_URL, data=body.encode(), headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode()
+                raise RuntimeError(f"讯飞HTTP {e.code}: {err_body[:200]}")
+
+        loop = None
         try:
-            async with websockets.connect(url, ping_interval=10) as ws:
-                # Send start frame
-                start_frame = json.dumps({
-                    "common": {"app_id": self._app_id},
-                    "business": {
-                        "language": "en_us",
-                        "domain": "iat",
-                        "accent": "mandarin",
-                        "vad_eos": 3000,   # VAD silence timeout (ms)
-                        "dwa": "wpgs",       # dynamic wfst-based decoding
-                    },
-                    "data": {
-                        "status": 0,
-                        "format": "audio/L16;rate=16000",
-                        "encoding": "raw",
-                        "audio": base64.b64encode(pcm_data[:32000]).decode("utf-8"),
-                    },
-                })
-                await ws.send(start_frame)
-
-                # Send any remaining audio in chunks
-                chunk_size = 32000  # iFlytek recommended frame size
-                for i in range(32000, len(pcm_data), chunk_size):
-                    chunk = pcm_data[i:i + chunk_size]
-                    frame = json.dumps({
-                        "data": {
-                            "status": 1,
-                            "format": "audio/L16;rate=16000",
-                            "encoding": "raw",
-                            "audio": base64.b64encode(chunk).decode("utf-8"),
-                        },
-                    })
-                    await ws.send(frame)
-
-                # Send end frame
-                end_frame = json.dumps({"data": {"status": 2}})
-                await ws.send(end_frame)
-
-                # Receive results
-                full_text = ""
-                async for msg in ws:
-                    try:
-                        result = json.loads(msg)
-                        code = result.get("code", 0)
-                        if code != 0:
-                            raise RuntimeError(f"讯飞识别错误 (code={code}): {result.get('message', 'unknown')}")
-
-                        # Extract text from result
-                        if "data" in result and "result" in result["data"]:
-                            ws_data = result["data"]["result"]
-                            if ws_data:
-                                # ws (word-segmented) format
-                                for ws_item in ws_data.get("ws", []):
-                                    for cw in ws_item.get("cw", []):
-                                        full_text += cw.get("w", "")
-                    except json.JSONDecodeError:
-                        continue
-
-                return full_text.strip() if full_text.strip() else "[No speech detected]"
-
-        except websockets.exceptions.ConnectionClosed as e:
-            raise RuntimeError(f"讯飞连接异常: {e}")
+            loop = __import__('asyncio').get_running_loop()
         except RuntimeError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"语音识别失败: {e}")
+            pass
+
+        if loop:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = await loop.run_in_executor(pool, _post)
+        else:
+            result = _post()
+
+        code = result.get("code", -1)
+        if code != 0:
+            raise RuntimeError(f"讯飞识别失败 (code={code}): {result.get('desc', 'unknown')}")
+
+        text = result.get("data", "")
+        return text.strip() if text.strip() else "[No speech detected]"
 
     async def synthesize(self, text: str, voice: str = "en-US-JennyNeural") -> bytes:
         """Convert text to speech MP3 bytes using Edge-TTS."""

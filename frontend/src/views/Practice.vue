@@ -179,44 +179,36 @@ async function handleSendText() {
   }
 }
 
-async function handleVoiceText(recognizedText: string) {
-  // Voice recognized text — send as regular text message
-  if (loading.value || !recognizedText) return
+async function handleSendAudio(audioBlob: Blob) {
+  if (loading.value) return
+  loading.value = true
 
-  // Echo user message
-  const userMsg: MessageItem = { id: `u${Date.now()}`, role: 'user', text: recognizedText }
-  messages.value.push(userMsg)
-
-  // Empty AI bubble for streaming
   const aiId = `a${Date.now()}`
   messages.value.push({ id: aiId, role: 'ai', text: '' })
 
-  loading.value = true
   try {
-    for await (const event of sendMessageStream(sessionId.value, { text: recognizedText })) {
+    for await (const event of sendMessageStream(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })) {
       if (event.type === 'text_delta') {
         const idx = messages.value.findIndex(m => m.id === aiId)
         if (idx >= 0) {
           messages.value[idx] = { ...messages.value[idx], text: messages.value[idx].text + (event.content || '') }
         }
       } else if (event.type === 'corrections' && event.data) {
-        const uIdx = messages.value.findIndex(m => m.id === userMsg.id)
-        if (uIdx >= 0 && event.data.length) {
-          let corrected = recognizedText
-          for (const c of event.data) {
-            corrected = corrected.replace(c.original || '', c.corrected || '')
-          }
-          messages.value[uIdx] = {
-            ...messages.value[uIdx],
-            correctedText: corrected,
-            corrections: event.data,
-          }
+        const doc = await getConversation(sessionId.value)
+        const lastTurn = doc.messages[doc.messages.length - 1]
+        if (lastTurn && lastTurn.user_text) {
+          messages.value.splice(messages.value.length - 1, 0, {
+            id: `u${Date.now()}`,
+            role: 'user',
+            text: lastTurn.user_text,
+            correctedText: lastTurn.corrected_text || undefined,
+            corrections: lastTurn.corrections || event.data,
+            pronunciationScore: lastTurn.pronunciation_score,
+          })
         }
       } else if (event.type === 'audio' && event.data) {
         const idx = messages.value.findIndex(m => m.id === aiId)
-        if (idx >= 0) {
-          messages.value[idx] = { ...messages.value[idx], audioBase64: event.data }
-        }
+        if (idx >= 0) messages.value[idx] = { ...messages.value[idx], audioBase64: event.data }
         playAudio(event.data)
       }
       scrollToBottom()
@@ -224,14 +216,14 @@ async function handleVoiceText(recognizedText: string) {
   } catch (e: any) {
     messages.value = messages.value.filter(m => m.id !== aiId)
     try {
-      const resp = await sendMessage(sessionId.value, { text: recognizedText })
+      const resp = await sendMessage(sessionId.value, { audio: audioBlob, filename: 'recording.wav' })
+      messages.value.push({ id: `u${Date.now()}`, role: 'user', text: resp.user_text, correctedText: resp.corrected_text || undefined, corrections: resp.corrections, pronunciationScore: resp.pronunciation_score })
       processResponse(resp)
     } catch (e2: any) {
       error.value = e2.message || 'Send failed'
     }
   } finally {
-    loading.value = false
-    scrollToBottom()
+    loading.value = false; scrollToBottom()
   }
 }
 
@@ -340,7 +332,7 @@ function scrollToBottom() {
         />
         <AudioRecorder
           :disabled="loading"
-          @text-ready="handleVoiceText"
+          @audio-ready="handleSendAudio"
         />
         <NButton
           type="primary"
