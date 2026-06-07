@@ -1,6 +1,10 @@
 # 🎯 AI 英语口语练习 (AI English Speaking Practice)
 
-基于 Claude API 的 AI 英语口语对话练习工具 — 在模拟真实场景中与 AI 角色对话，获得实时语法纠正、发音评分、语音回听和课后学习报告。支持 Duolingo 风格的学习激励系统（目标打卡、连续天数、XP 等级、成就徽章）。
+基于 讯飞 API 的 AI 英语口语对话练习工具 — 在模拟真实场景中与 AI 角色对话，获得实时语法纠正、发音评分、语音回听和课后学习报告。支持 Duolingo 风格的学习激励系统（目标打卡、连续天数、XP 等级、成就徽章）。
+
+## 🎥 Demo 演示视频
+
+👉 **[点击观看完整演示（Bilibili）](https://www.bilibili.com/video/BV1esE461ELt/)**
 
 ## ✨ 功能介绍
 
@@ -175,15 +179,14 @@ cp .env.example .env
 编辑 `backend/.env`：
 
 ```env
-# Claude API (对话引擎) — https://console.anthropic.com
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+
 
 # 讯飞语音识别 — https://console.xfyun.cn
 XFYUN_APP_ID=your-app-id
 XFYUN_API_KEY=your-api-key
 XFYUN_API_SECRET=your-api-secret
 
-# DeepSeek API (备选对话引擎)
+# DeepSeek API (对话引擎)
 DEEPSEEK_API_KEY=sk-your-key-here
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 ```
