@@ -11,14 +11,52 @@ load_dotenv()
 
 import os
 import json
+import time
+import logging
 import base64
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_DIR / "app.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("english-practice")
+
+# ---------------------------------------------------------------------------
+# In-memory rate limiter (per IP, no Redis dependency)
+# ---------------------------------------------------------------------------
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))       # requests
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60")) # seconds
+_rate_buckets: dict[str, list[float]] = {}
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """Return True if the request is allowed, False if rate-limited."""
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+    bucket = _rate_buckets.get(client_ip, [])
+    bucket = [t for t in bucket if t > window_start]  # prune old timestamps
+    if len(bucket) >= RATE_LIMIT_MAX:
+        _rate_buckets[client_ip] = bucket
+        return False
+    bucket.append(now)
+    _rate_buckets[client_ip] = bucket
+    return True
 
 from services import (
     SceneManager,
@@ -54,6 +92,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Rate-limit requests per IP. Skips static files and GET requests."""
+    if request.method != "GET" and request.url.path.startswith("/api/"):
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        if not _check_rate_limit(client_ip):
+            logger.warning("Rate limit exceeded for %s — %s %s", client_ip, request.method, request.url.path)
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please slow down.", "retry_after": RATE_LIMIT_WINDOW},
+            )
+    response = await call_next(request)
+    return response
+
 # Services
 scenes = SceneManager()
 convs = ConversationManager()
@@ -65,7 +118,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 init_db()
 migrated = migrate_json_to_sqlite()
 if migrated:
-    print(f"[startup] Migrated {migrated} JSON conversations to SQLite")
+    logger.info("Migrated %d JSON conversations to SQLite", migrated)
+
+logger.info("App started — DEEPSEEK_API_KEY=%s", "set" if os.getenv("DEEPSEEK_API_KEY") else "NOT SET")
 
 # ---------------------------------------------------------------------------
 # Routes — Scenes
@@ -180,6 +235,7 @@ async def send_message(
             (audio_dir / audio_filename).write_bytes(audio_bytes)
             audio_path = audio_filename
         except RuntimeError as e:
+            logger.error("Speech recognition failed: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
         user_text = text.strip()
@@ -285,6 +341,7 @@ async def send_message_stream(
             (audio_dir / audio_filename).write_bytes(audio_bytes)
             audio_path = audio_filename
         except RuntimeError as e:
+            logger.error("Speech recognition failed: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
     elif text:
         user_text = text.strip()
